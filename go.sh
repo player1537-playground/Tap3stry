@@ -24,6 +24,10 @@ go-osprayAsAService() {
         ##
 }
 
+go-studioAsAService() {
+    pexec 
+}
+
 
 #--- Docker
 
@@ -48,6 +52,7 @@ go-docker-build() {
         --tag "${docker_tag:?}" \
         - <<'EOF'
 FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y \
@@ -58,42 +63,47 @@ RUN apt-get update && \
         libglu1-mesa-dev \
         xorg-dev \
         libglfw3-dev \
+        curl \
+        gdb \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && \
     apt-get install -y \
-        curl \
+        software-properties-common \
+    && \
+    add-apt-repository \
+        ppa:deadsnakes/ppa \
+    && \
+    apt-get update && \
+    apt-get install -y \
+        python3.9 \
+        python3-dev \
+        python3-pip \
+        python3-virtualenv \
     && rm -rf /var/lib/apt/lists/*
 
-
-ARG OSPRAY_VERSION=2.12.0
-WORKDIR /opt/ospray-${OSPRAY_VERSION:?}
+ARG STUDIO_VERSION=0.12.1
+WORKDIR /opt/studio-${STUDIO_VERSION:?}
 RUN --mount=type=cache,target=/tmp \
     curl \
         --continue-at - \
         --location \
-        https://github.com/ospray/ospray/releases/download/v${OSPRAY_VERSION:?}/ospray-${OSPRAY_VERSION:?}.x86_64.linux.tar.gz \
-        --output /tmp/ospray-${OSPRAY_VERSION:?}.x86_64.linux.tar.gz \
+        https://github.com/ospray/ospray_studio/releases/download/v${STUDIO_VERSION:?}/ospray_studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
+        --output /tmp/studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
     && \
     tar \
         --extract \
-        --file=/tmp/ospray-${OSPRAY_VERSION:?}.x86_64.linux.tar.gz \
+        --file=/tmp/studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
         --strip-components=1 \
-        --directory=/opt/ospray-${OSPRAY_VERSION:?} \
+        --directory=/opt/studio-${STUDIO_VERSION:?} \
     && \
     true
-ENV PATH="/opt/ospray-${OSPRAY_VERSION:?}/bin${PATH:+:${PATH:?}}"
-
-RUN apt-get update && \
-    apt-get install -y \
-        gdb \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && \
-    apt-get install -y \
-        git \
-    && rm -rf /var/lib/apt/lists/*
-
+ENV PATH="/opt/studio-${STUDIO_VERSION:?}/bin${PATH:+:${PATH}}" \
+    CPATH="/opt/studio-${STUDIO_VERSION:?}/include${CPATH:+:${CPATH}}" \
+    LIBRARY_PATH="/opt/studio-${STUDIO_VERSION:?}/lib64${LIBRARY_PATH:+:${LIBRARY_PATH}}" \
+    LD_LIBRARY_PATH="/opt/studio-${STUDIO_VERSION:?}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    PYTHONPATH="/opt/studio-${STUDIO_VERSION:?}/lib64${PYTHONPATH:+:${PYTHONPATH}}"
 
 EOF
 }
