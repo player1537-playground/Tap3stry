@@ -14,6 +14,7 @@ import typing
 import struct
 import subprocess
 import decimal
+import math
 
 from flask import Flask
 
@@ -44,6 +45,8 @@ class RenderingRequest:
     cameraUp: Tuple[float, float, float]
     cameraDirection: Tuple[float, float, float]
     backgroundColor: Tuple[float, float, float, float]
+    regionRow: Tuple[int, int]
+    regionCol: Tuple[int, int]
 
     def write(self, fileobj: BinaryIO):
         def write(s: str):
@@ -70,6 +73,14 @@ class RenderingRequest:
         write(' '.join([
             f'{x}'
             for x in self.backgroundColor
+        ]))
+        write(' '.join([
+            f'{x}'
+            for x in self.regionRow
+        ]))
+        write(' '.join([
+            f'{x}'
+            for x in self.regionCol
         ]))
 
         fileobj.flush()
@@ -134,16 +145,30 @@ def image(options: str):
     options = dict(pairwise(options))
 
     br, bg, bb, ba = map(int, options.get('background', '0/0/0/0').split('/'))
+    colormap = options.get('colormap', 'spectralReverse')
+    opacitymap = options.get('opacitymap', 'reverseRamp')
+    tile, ntiles = map(int, options.get('tiling', '0-1').split('-'))
+
+    nrows = int(math.sqrt(ntiles))
+    row = tile // nrows
+
+    ncols = ntiles // nrows
+    col = tile % nrows
+
+    row, nrows = map(int, options.get('row', f'{row}/{nrows}').split('/'))
+    col, ncols = map(int, options.get('col', f'{col}/{ncols}').split('/'))
 
     response = _g_renderer.send(RenderingRequest(
         imageResolution=resolution,
         volumeName=dataset,
-        colorMapName='spectralReverse',
-        opacityMapName='reverseRamp',
+        colorMapName=colormap,
+        opacityMapName=opacitymap,
         cameraPosition=(px, py, pz),
         cameraUp=(ux, uy, uz),
         cameraDirection=(dx, dy, dz),
         backgroundColor=(br, bg, bb, ba),
+        regionRow=(row, nrows),
+        regionCol=(col, ncols),
     ))
 
     return response.imageData, { 'Content-Type': 'image/jpg' }

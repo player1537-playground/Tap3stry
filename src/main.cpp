@@ -141,8 +141,6 @@ static void *xReadBytes(const std::string &filename) {
 
     std::fclose(file);
 
-    std::fprintf(stderr, "Read %zu bytes from %s\n", nbyte, filename.c_str());
-
     return data;
 }
 
@@ -153,8 +151,6 @@ static T xCommit(T& t) {
 }
 
 static OSPData xNewSharedData(const void *sharedData, OSPDataType dataType, uint64_t numItems1, uint64_t numItems2, uint64_t numItems3) {
-    std::fprintf(stderr, "xNewSharedData(%p, %zu, %zu, %zu)\n", sharedData, numItems1, numItems2, numItems3);
-
     OSPData data;
     int64_t byteStride1 = 0;
     int64_t byteStride2 = 0;
@@ -174,9 +170,6 @@ static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dat
     data = ({
         OSPData data;
         const void *sharedData = xReadBytes(filename);
-        for (int i=0; i<10; ++i) {
-            std::fprintf(stderr, "xNewVolume sharedData[%d] = %g\n", i, static_cast<const float *>(sharedData)[i]);
-        }
         OSPDataType dataType = dataType_;
         uint64_t numItems1 = d1;
         uint64_t numItems2 = d2;
@@ -188,11 +181,9 @@ static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dat
     ospSetObject(volume, "data", data);
 
     float gridOrigin[3] = { -0.5f, -0.5f, -0.5f };
-    std::fprintf(stderr, "gridOrigin = %f %f %f\n", gridOrigin[0], gridOrigin[1], gridOrigin[2]);
     ospSetParam(volume, "gridOrigin", OSP_VEC3F, gridOrigin);
 
     float gridSpacing[3] = { 1.0f/d1, 1.0f/d2, 1.0f/d3 };
-    std::fprintf(stderr, "gridSpacing = %f %f %f\n", gridSpacing[0], gridSpacing[1], gridSpacing[2]);
     ospSetParam(volume, "gridSpacing", OSP_VEC3F, gridSpacing);
 
     // int cellCentered = 0;
@@ -223,7 +214,6 @@ static OSPData xNewColorMap(const std::string &name) {
     uint64_t numItems1 = colorMaps[name].size();
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
-    std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
 
     ospRetain(data);
@@ -293,8 +283,6 @@ static OSPVolume xNewVolume(const std::string &name) {
 
     if (name == "supernova") {
         static OSPVolume supernova = ({
-            std::fprintf(stderr, "Initialize supernova\n");
-
             OSPVolume volume;
             const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
             OSPDataType dataType = OSP_FLOAT;
@@ -383,7 +371,7 @@ int main(int argc, const char **argv) {
         int imageResolution = 256;
         std::string volumeName = "supernova";
         std::string colorMapName = "viridis";
-        std::string opacityMapName = "ramp";
+        std::string opacityMapName = "reverseRamp";
         float cameraPositionX = 1.0f;
         float cameraPositionY = 0.0f;
         float cameraPositionZ = 1.0f;
@@ -397,6 +385,10 @@ int main(int argc, const char **argv) {
         int backgroundColorG = 0;
         int backgroundColorB = 0;
         int backgroundColorA = 0;
+        int regionRow = 0;
+        int regionRowCount = 1;
+        int regionCol = 0;
+        int regionColCount = 1;
 
         std::cin
             >> imageResolution
@@ -407,6 +399,8 @@ int main(int argc, const char **argv) {
             >> cameraUpX >> cameraUpY >> cameraUpZ
             >> cameraDirectionX >> cameraDirectionY >> cameraDirectionZ
             >> backgroundColorR >> backgroundColorG >> backgroundColorB >> backgroundColorA
+            >> regionRow >> regionRowCount
+            >> regionCol >> regionColCount
             ;
 
         OSPFrameBuffer frameBuffer;
@@ -467,6 +461,18 @@ int main(int argc, const char **argv) {
                 cameraDirectionZ,
             };
             ospSetParam(camera, "direction", OSP_VEC3F, direction);
+
+            float imageStart[2] = {
+                (regionCol + 0.0f) / regionColCount,  // left
+                (regionRow + 1.0f) / regionRowCount,  // bottom
+            };
+            ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
+
+            float imageEnd[2] = {
+                (regionCol + 1.0f) / regionColCount,  // right
+                (regionRow + 0.0f) / regionRowCount,  // top
+            };
+            ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
 
             xCommit(camera);
         });

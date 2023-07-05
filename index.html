@@ -21,7 +21,7 @@ for (let i=0, n=16;; ++i) {
         reject = rej;
 
         timeoutId = setTimeout(ontimeout, 1000);
-        image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/256/,background,38/36/54/0`;
+        image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/256/,background,38/36/54/0,tiling,0-4`;
     });
 
     clearTimeout(timeoutId);
