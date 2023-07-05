@@ -2,41 +2,68 @@
 <meta charset="utf-8">
 <title>Tap3stry Test Page</title>
 <body>
-<p><img id="image" src="/image/supernova/1.0/0.0/1.0/0.0/1.0/0.0/-1.0/0.0/-1.0/256/,">
+<p><div id="container"></div>
 <p><button id="button">Stop</button>
 <script type="module">
 let resolve, reject;
-image.onload = onload;
-image.onerror = onerror;
 button.onclick = onclick;
+
+const ROWS = 2;
+const COLS = 2;
+
+const images = [];
+for (let i=0; i<ROWS; ++i) {
+    const $row = document.createElement('div');
+
+    for (let j=0; j<COLS; ++j) {
+        const image = new Image();
+        image.onload = onload;
+        image.onerror = onerror;
+
+        $row.appendChild(image);
+
+        images.push(image);
+    }
+    
+    container.appendChild($row);
+}
 
 for (let i=0, n=16;; ++i) {
     const x = Math.cos(i*Math.PI/n);
     const y = 0.0;
     const z = Math.sin(i*Math.PI/n);
 
-    let timeoutId = null;
-    await new Promise((res, rej) => {
-        resolve = res;
-        reject = rej;
+    const promises = [];
+    for (let j=0, m=images.length; j<m; ++j) {
+        const image = images[j];
 
-        timeoutId = setTimeout(ontimeout, 1000);
-        image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/256/,background,38/36/54/0,tiling,0-4`;
-    });
+        image.onload = onload;
+        image.onerror = onerror;
+
+        const promise = new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = reject;
+            image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/${256/ROWS|0}/,background,38/36/54/0,tiling,${j}-${m}`;
+        });
+        promises.push(promise);
+    }
+
+    let timeoutId = null;
+    await Promise.race([
+        Promise.all(promises),
+        new Promise((res, rej) => {
+            resolve = res;
+            reject = rej;
+
+            timeoutId = setTimeout(ontimeout, 1000);
+        }),
+    ]);
 
     clearTimeout(timeoutId);
 }
 
 function ontimeout() {
     resolve();
-}
-
-function onload() {
-    resolve();
-}
-
-function onerror() {
-    reject();
 }
 
 function onclick() {

@@ -367,169 +367,200 @@ int main(int argc, const char **argv) {
         device;
     });
 
-    for (;;) {
-        int imageResolution = 256;
-        std::string volumeName = "supernova";
-        std::string colorMapName = "viridis";
-        std::string opacityMapName = "reverseRamp";
-        float cameraPositionX = 1.0f;
-        float cameraPositionY = 0.0f;
-        float cameraPositionZ = 1.0f;
-        float cameraUpX = 0.0f;
-        float cameraUpY = 1.0f;
-        float cameraUpZ = 0.0f;
-        float cameraDirectionX = -1.0f;
-        float cameraDirectionY =  0.0f;
-        float cameraDirectionZ = -1.0f;
-        int backgroundColorR = 0;
-        int backgroundColorG = 0;
-        int backgroundColorB = 0;
-        int backgroundColorA = 0;
-        int regionRow = 0;
-        int regionRowCount = 1;
-        int regionCol = 0;
-        int regionColCount = 1;
+    int imageResolution = 256;
+    std::string volumeName = "supernova";
+    std::string colorMapName = "viridis";
+    std::string opacityMapName = "reverseRamp";
+    float cameraPositionX = 1.0f;
+    float cameraPositionY = 0.0f;
+    float cameraPositionZ = 1.0f;
+    float cameraUpX = 0.0f;
+    float cameraUpY = 1.0f;
+    float cameraUpZ = 0.0f;
+    float cameraDirectionX = -1.0f;
+    float cameraDirectionY =  0.0f;
+    float cameraDirectionZ = -1.0f;
+    int backgroundColorR = 0;
+    int backgroundColorG = 0;
+    int backgroundColorB = 0;
+    int backgroundColorA = 0;
+    int regionRow = 0;
+    int regionRowCount = 1;
+    int regionCol = 0;
+    int regionColCount = 1;
 
-        std::cin
-            >> imageResolution
-            >> volumeName
-            >> colorMapName
-            >> opacityMapName
-            >> cameraPositionX >> cameraPositionY >> cameraPositionZ
-            >> cameraUpX >> cameraUpY >> cameraUpZ
-            >> cameraDirectionX >> cameraDirectionY >> cameraDirectionZ
-            >> backgroundColorR >> backgroundColorG >> backgroundColorB >> backgroundColorA
-            >> regionRow >> regionRowCount
-            >> regionCol >> regionColCount
-            ;
+    OSPFrameBuffer frameBuffer;
+    OSPWorld world;
+    OSPRenderer renderer;
+    OSPCamera camera;
 
-        OSPFrameBuffer frameBuffer;
-        frameBuffer = ({
-            OSPFrameBuffer frameBuffer;
-            int size_x = imageResolution;
-            int size_y = imageResolution;
-            OSPFrameBufferFormat format = OSP_FB_RGBA8;
-            uint32_t channels = OSP_FB_COLOR;
-            frameBuffer = ospNewFrameBuffer(size_x, size_y, format, channels);
+    std::string key;
+    while (std::cin >> key) {
+        if (key == "image") {
+            std::cin
+                >> imageResolution
+                ;
 
-            xCommit(frameBuffer);
-        });
+            frameBuffer = ({
+                OSPFrameBuffer frameBuffer;
+                int size_x = imageResolution;
+                int size_y = imageResolution;
+                OSPFrameBufferFormat format = OSP_FB_RGBA8;
+                uint32_t channels = OSP_FB_COLOR;
+                frameBuffer = ospNewFrameBuffer(size_x, size_y, format, channels);
 
-        OSPRenderer renderer;
-        renderer = ({
-            OSPRenderer renderer;
-            const char *type = "ao";
-            renderer = ospNewRenderer(type);
-
-            float backgroundColor[4] = {
-                backgroundColorR / 255.0f,
-                backgroundColorG / 255.0f,
-                backgroundColorB / 255.0f,
-                backgroundColorA / 255.0f,
-            };
-            ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
-
-            xCommit(renderer);
-        });
-
-        OSPCamera camera;
-        camera = ({
-            OSPCamera camera;
-            const char *type = "perspective";
-            camera = ospNewCamera(type);
-
-            float fovy[1] = { 90.0f };
-            ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
-
-            float position[3] = {
-                cameraPositionX,
-                cameraPositionY,
-                cameraPositionZ,
-            };
-            ospSetParam(camera, "position", OSP_VEC3F, position);
-
-            float up[3] = {
-                cameraUpX,
-                cameraUpY,
-                cameraUpZ,
-            };
-            ospSetParam(camera, "up", OSP_VEC3F, up);
-
-            float direction[3] = {
-                cameraDirectionX,
-                cameraDirectionY,
-                cameraDirectionZ,
-            };
-            ospSetParam(camera, "direction", OSP_VEC3F, direction);
-
-            float imageStart[2] = {
-                (regionCol + 0.0f) / regionColCount,  // left
-                (regionRow + 1.0f) / regionRowCount,  // bottom
-            };
-            ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
-
-            float imageEnd[2] = {
-                (regionCol + 1.0f) / regionColCount,  // right
-                (regionRow + 0.0f) / regionRowCount,  // top
-            };
-            ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
-
-            xCommit(camera);
-        });
-
-        OSPWorld world;
-        world = ({
-            OSPWorld world;
-            world = ospNewWorld();
-
-            OSPInstance instance;
-            instance = ({
-                OSPInstance instance;
-                instance = ospNewInstance(nullptr);
-
-                OSPGroup group;
-                group = ({
-                    OSPGroup group;
-                    group = ospNewGroup();
-
-                    OSPVolumetricModel volume;
-                    volume = ({
-                        OSPVolumetricModel model;
-                        model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
-
-                        xCommit(model);
-                    });
-                    ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
-                    ospRelease(volume);
-
-                    xCommit(group);
-                });
-                ospSetObject(instance, "group", group);
-                ospRelease(group);
-
-                xCommit(instance);
+                xCommit(frameBuffer);
             });
-            ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
-            ospRelease(instance);
 
-            // OSPLight light;
-            // light = ({
-            //     OSPLight light;
-            //     const char *type = "ambient";
-            //     light = ospNewLight(type);
+            continue;
 
-            //     float color[3] = { 1.0f, 1.0f, 1.0f };
-            //     ospSetParam(light, "color", OSP_VEC3F, color);
+        } else if (key == "volume") {
+            std::cin
+                >> volumeName
+                >> colorMapName
+                >> opacityMapName
+                ;
 
-            //     float intensity[1] = { 100.0f };
-            //     ospSetParam(light, "intensity", OSP_FLOAT, intensity);
+            world = ({
+                OSPWorld world;
+                world = ospNewWorld();
 
-            //     xCommit(light);
-            // });
-            // ospSetObjectAsData(world, "light", OSP_LIGHT, light);
+                OSPInstance instance;
+                instance = ({
+                    OSPInstance instance;
+                    instance = ospNewInstance(nullptr);
 
-            xCommit(world);
-        });
+                    OSPGroup group;
+                    group = ({
+                        OSPGroup group;
+                        group = ospNewGroup();
+
+                        OSPVolumetricModel volume;
+                        volume = ({
+                            OSPVolumetricModel model;
+                            model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+
+                            xCommit(model);
+                        });
+                        ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
+                        ospRelease(volume);
+
+                        xCommit(group);
+                    });
+                    ospSetObject(instance, "group", group);
+                    ospRelease(group);
+
+                    xCommit(instance);
+                });
+                ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
+                ospRelease(instance);
+
+                // OSPLight light;
+                // light = ({
+                //     OSPLight light;
+                //     const char *type = "ambient";
+                //     light = ospNewLight(type);
+
+                //     float color[3] = { 1.0f, 1.0f, 1.0f };
+                //     ospSetParam(light, "color", OSP_VEC3F, color);
+
+                //     float intensity[1] = { 100.0f };
+                //     ospSetParam(light, "intensity", OSP_FLOAT, intensity);
+
+                //     xCommit(light);
+                // });
+                // ospSetObjectAsData(world, "light", OSP_LIGHT, light);
+
+                xCommit(world);
+            });
+            continue;
+        
+        } else if (key == "camera") {
+            std::cin
+                >> cameraPositionX >> cameraPositionY >> cameraPositionZ
+                >> cameraUpX >> cameraUpY >> cameraUpZ
+                >> cameraDirectionX >> cameraDirectionY >> cameraDirectionZ
+                >> regionRow >> regionRowCount
+                >> regionCol >> regionColCount
+                ;
+
+            camera = ({
+                OSPCamera camera;
+                const char *type = "perspective";
+                camera = ospNewCamera(type);
+
+                float fovy[1] = { 90.0f };
+                ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
+
+                float position[3] = {
+                    cameraPositionX,
+                    cameraPositionY,
+                    cameraPositionZ,
+                };
+                ospSetParam(camera, "position", OSP_VEC3F, position);
+
+                float up[3] = {
+                    cameraUpX,
+                    cameraUpY,
+                    cameraUpZ,
+                };
+                ospSetParam(camera, "up", OSP_VEC3F, up);
+
+                float direction[3] = {
+                    cameraDirectionX,
+                    cameraDirectionY,
+                    cameraDirectionZ,
+                };
+                ospSetParam(camera, "direction", OSP_VEC3F, direction);
+
+                float imageStart[2] = {
+                    (regionCol + 0.0f) / regionColCount,  // left
+                    1.0f - (regionRow + 0.0f) / regionRowCount,  // bottom
+                };
+                ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
+
+                float imageEnd[2] = {
+                    (regionCol + 1.0f) / regionColCount,  // right
+                    1.0f - (regionRow + 1.0f) / regionRowCount,  // top
+                };
+                ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
+
+                xCommit(camera);
+            });
+
+            continue;
+        
+        } else if (key == "renderer") {
+            std::cin
+                >> backgroundColorR >> backgroundColorG >> backgroundColorB >> backgroundColorA
+                ;
+
+            renderer = ({
+                OSPRenderer renderer;
+                const char *type = "ao";
+                renderer = ospNewRenderer(type);
+
+                float backgroundColor[4] = {
+                    backgroundColorR / 255.0f,
+                    backgroundColorG / 255.0f,
+                    backgroundColorB / 255.0f,
+                    backgroundColorA / 255.0f,
+                };
+                ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
+
+                xCommit(renderer);
+            });
+            continue;
+
+        } else if (key == "render") {
+            // fall through
+        
+        } else {
+            std::fprintf(stderr, "Unknown key: %s\n", key.c_str());
+            continue;
+
+        }
+
 
         ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
 

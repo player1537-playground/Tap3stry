@@ -15,12 +15,14 @@ import struct
 import subprocess
 import decimal
 import math
+import threading
 
 from flask import Flask
 
 
 app = Flask(__name__)
 _g_renderer: Renderer
+_g_renderer_lock: threading.Lock = threading.Lock()
 
 
 def pairwise(it: Iterable[Any]) -> Iterator[Tuple[Any, Any]]:
@@ -54,10 +56,21 @@ class RenderingRequest:
             s = s.encode('utf-8')
             fileobj.write(s)
 
+        write('image')
         write(f'{self.imageResolution}')
+
+        write('renderer')
+        write(' '.join([
+            f'{x}'
+            for x in self.backgroundColor
+        ]))
+
+        write('volume')
         write(f'{self.volumeName}')
         write(f'{self.colorMapName}')
         write(f'{self.opacityMapName}')
+
+        write('camera')
         write(' '.join([
             f'{x}'
             for x in self.cameraPosition
@@ -72,16 +85,14 @@ class RenderingRequest:
         ]))
         write(' '.join([
             f'{x}'
-            for x in self.backgroundColor
-        ]))
-        write(' '.join([
-            f'{x}'
             for x in self.regionRow
         ]))
         write(' '.join([
             f'{x}'
             for x in self.regionCol
         ]))
+
+        write('render')
 
         fileobj.flush()
 
@@ -158,18 +169,19 @@ def image(options: str):
     row, nrows = map(int, options.get('row', f'{row}/{nrows}').split('/'))
     col, ncols = map(int, options.get('col', f'{col}/{ncols}').split('/'))
 
-    response = _g_renderer.send(RenderingRequest(
-        imageResolution=resolution,
-        volumeName=dataset,
-        colorMapName=colormap,
-        opacityMapName=opacitymap,
-        cameraPosition=(px, py, pz),
-        cameraUp=(ux, uy, uz),
-        cameraDirection=(dx, dy, dz),
-        backgroundColor=(br, bg, bb, ba),
-        regionRow=(row, nrows),
-        regionCol=(col, ncols),
-    ))
+    with _g_renderer_lock:
+        response = _g_renderer.send(RenderingRequest(
+            imageResolution=resolution,
+            volumeName=dataset,
+            colorMapName=colormap,
+            opacityMapName=opacitymap,
+            cameraPosition=(px, py, pz),
+            cameraUp=(ux, uy, uz),
+            cameraDirection=(dx, dy, dz),
+            backgroundColor=(br, bg, bb, ba),
+            regionRow=(row, nrows),
+            regionCol=(col, ncols),
+        ))
 
     return response.imageData, { 'Content-Type': 'image/jpg' }
 
