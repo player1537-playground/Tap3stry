@@ -6,6 +6,7 @@
 #include <string> // std::string
 #include <vector> // std::vector
 #include <tuple> // std::make_tuple, std::tie
+#include <iostream> // std::cin
 
 //ospray
 #include <ospray/ospray.h>
@@ -51,7 +52,7 @@ static void stbiCallback(void *context_, void *data, int size) {
     context->offset += size;
 }
 
-static void xWriteJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
+static size_t xWriteJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
     if (*outsize == 0) {
         *outsize = 1024;
         *outdata = std::malloc(*outsize);
@@ -72,9 +73,11 @@ static void xWriteJPG(const void *rgba, int width, int height, size_t *outsize, 
     int quality = 95;
     success = stbi_write_jpg_to_func(func, context_, w, h, comp, data, quality);
     if (!success) die("Failed to stbi_write_jpg_to_func");
+
+    return context.offset;
 }
 
-static void xWritePNG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
+static size_t xWritePNG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
     if (*outsize == 0) {
         *outsize = 1024;
         *outdata = std::malloc(*outsize);
@@ -95,6 +98,8 @@ static void xWritePNG(const void *rgba, int width, int height, size_t *outsize, 
     int stride = 0;
     success = stbi_write_png_to_func(func, context_, w, h, comp, data, stride);
     if (!success) die("Failed to stbi_write_png_to_func");
+
+    return context.offset;
 }
 
 static void xWriteBytes(const std::string &filename, size_t size, void *data) {
@@ -159,7 +164,7 @@ static OSPData xNewSharedData(const void *sharedData, OSPDataType dataType, uint
 }
 
 
-static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, uint64_t d1, uint64_t d2, uint64_t d3) {
+static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dataType_, uint64_t d1, uint64_t d2, uint64_t d3) {
     OSPVolume volume;
     const char *type = "structuredRegular";
     volume = ospNewVolume(type);
@@ -195,7 +200,7 @@ static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, 
     return volume;
 }
 
-static OSPData xNewNamedColorMap(const std::string &name) {
+static OSPData xNewColorMap(const std::string &name) {
     static float viridis[][3] = {
         { 0.267f, 0.005f, 0.329f },
         { 0.279f, 0.175f, 0.483f },
@@ -231,7 +236,7 @@ static OSPData xNewNamedColorMap(const std::string &name) {
     return data;
 }
 
-static OSPData xNewNamedOpacityMap(const std::string &name) {
+static OSPData xNewOpacityMap(const std::string &name) {
     static float ramp[][1] = {
         { 0.0f },
         { 1.0f },
@@ -247,7 +252,6 @@ static OSPData xNewNamedOpacityMap(const std::string &name) {
         0;
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
-    std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
 
     return data;
@@ -261,7 +265,7 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     OSPData color;
     color = ({
         OSPData data;
-        data = xNewNamedColorMap(colorName);
+        data = xNewColorMap(colorName);
         
         xCommit(data);
     });
@@ -270,23 +274,83 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     OSPData opacity;
     opacity = ({
         OSPData data;
-        data = xNewNamedOpacityMap(opacityName);
+        data = xNewOpacityMap(opacityName);
         
         xCommit(data);
     });
-    std::fprintf(stderr, "opacity=%p\n", (void *)opacity);
     ospSetObject(transferFunction, "opacity", opacity);
 
     return transferFunction;
 }
 
-void xErrorCallback(void *userData, OSPError error, const char *errorDetails) {
+static OSPVolume xNewVolume(const std::string &name) {
+    OSPVolume volume;
+
+    if (name == "supernova") {
+        static OSPVolume supernova = ({
+            std::fprintf(stderr, "Initialize supernova\n");
+
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 432;
+            uint64_t d2 = 432;
+            uint64_t d3 = 432;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = supernova;
+    
+    } else {
+        std::fprintf(stderr, "ERROR: Unknown volume: %s\n", name.c_str());
+
+    }
+
+    return volume;
+}
+
+static OSPVolumetricModel xNewVolumetricModel(const std::string &volumeName, const std::string &colorMapName, const std::string &opacityMapName) {
+    OSPVolumetricModel model;
+    model = ospNewVolumetricModel(nullptr);
+
+    OSPVolume volume;
+    volume = ({
+        OSPVolume volume;
+        volume = xNewVolume(volumeName);
+
+        xCommit(volume);
+    });
+    ospSetObject(model, "volume", volume);
+    ospRelease(volume);
+
+    OSPTransferFunction transferFunction;
+    transferFunction = ({
+        OSPTransferFunction transferFunction;
+        transferFunction = xNewTransferFunction(colorMapName, opacityMapName);
+
+        float value[2] = { 0.0f, 0.130518f };
+        ospSetParam(transferFunction, "value", OSP_BOX1F, value);
+
+        xCommit(transferFunction);
+    });
+    ospSetObject(model, "transferFunction", transferFunction);
+    ospRelease(transferFunction);
+
+    return model;
+}
+
+static void xErrorCallback(void *userData, OSPError error, const char *errorDetails) {
     std::fprintf(stderr, "OSPError (%d): %s\n", (int)error, errorDetails);
 }
 
-void xStatusCallback(void *userData, const char *messageText) {
+static void xStatusCallback(void *userData, const char *messageText) {
     std::fprintf(stderr, "OSPStatus: %s\n", messageText);
 }
+
 
 int main(int argc, const char **argv) {
     OSPError ospInitError = ospInit(&argc, argv);
@@ -310,166 +374,183 @@ int main(int argc, const char **argv) {
         device;
     });
 
-    OSPFrameBuffer frameBuffer;
-    frameBuffer = ({
+    for (;;) {
+        int imageResolution = 256;
+        std::string volumeName = "supernova";
+        std::string colorMapName = "viridis";
+        std::string opacityMapName = "ramp";
+        float cameraPositionX = 1.0f;
+        float cameraPositionY = 0.0f;
+        float cameraPositionZ = 1.0f;
+        float cameraUpX = 0.0f;
+        float cameraUpY = 1.0f;
+        float cameraUpZ = 0.0f;
+        float cameraDirectionX = -1.0f;
+        float cameraDirectionY =  0.0f;
+        float cameraDirectionZ = -1.0f;
+        int backgroundColorR = 0;
+        int backgroundColorG = 0;
+        int backgroundColorB = 0;
+        int backgroundColorA = 0;
+
+        std::cin
+            >> imageResolution
+            >> volumeName
+            >> colorMapName
+            >> opacityMapName
+            >> cameraPositionX >> cameraPositionY >> cameraPositionZ
+            >> cameraUpX >> cameraUpY >> cameraUpZ
+            >> cameraDirectionX >> cameraDirectionY >> cameraDirectionZ
+            >> backgroundColorR >> backgroundColorG >> backgroundColorB >> backgroundColorA
+            ;
+
         OSPFrameBuffer frameBuffer;
-        int size_x = 256;
-        int size_y = 256;
-        OSPFrameBufferFormat format = OSP_FB_RGBA8;
-        uint32_t channels = OSP_FB_COLOR;
-        frameBuffer = ospNewFrameBuffer(size_x, size_y, format, channels);
+        frameBuffer = ({
+            OSPFrameBuffer frameBuffer;
+            int size_x = imageResolution;
+            int size_y = imageResolution;
+            OSPFrameBufferFormat format = OSP_FB_RGBA8;
+            uint32_t channels = OSP_FB_COLOR;
+            frameBuffer = ospNewFrameBuffer(size_x, size_y, format, channels);
 
-        xCommit(frameBuffer);
-    });
+            xCommit(frameBuffer);
+        });
 
-    OSPRenderer renderer;
-    renderer = ({
         OSPRenderer renderer;
-        const char *type = "scivis";
-        renderer = ospNewRenderer(type);
+        renderer = ({
+            OSPRenderer renderer;
+            const char *type = "ao";
+            renderer = ospNewRenderer(type);
 
-        float backgroundColor[4] = { 0.5f, 0.5f, 0.5f, 0.5f };
-        // float backgroundColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-        // float backgroundColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
+            float backgroundColor[4] = {
+                backgroundColorR / 255.0f,
+                backgroundColorG / 255.0f,
+                backgroundColorB / 255.0f,
+                backgroundColorA / 255.0f,
+            };
+            ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
 
-        xCommit(renderer);
-    });
+            xCommit(renderer);
+        });
 
-    OSPCamera camera;
-    camera = ({
         OSPCamera camera;
-        const char *type = "panoramic";
-        camera = ospNewCamera(type);
+        camera = ({
+            OSPCamera camera;
+            const char *type = "perspective";
+            camera = ospNewCamera(type);
 
-        // float fovy[1] = { 180.0f };
-        // ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
+            float fovy[1] = { 90.0f };
+            ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
 
-        float position[3] = { 1.0f, 1.0f, 1.0f };
-        ospSetParam(camera, "position", OSP_VEC3F, position);
+            float position[3] = {
+                cameraPositionX,
+                cameraPositionY,
+                cameraPositionZ,
+            };
+            ospSetParam(camera, "position", OSP_VEC3F, position);
 
-        float up[3] = { 0.0f, 1.0f, 0.0f };
-        ospSetParam(camera, "up", OSP_VEC3F, up);
+            float up[3] = {
+                cameraUpX,
+                cameraUpY,
+                cameraUpZ,
+            };
+            ospSetParam(camera, "up", OSP_VEC3F, up);
 
-        float direction[3] = { -1.0f, -1.0f, -1.0f };
-        ospSetParam(camera, "direction", OSP_VEC3F, direction);
+            float direction[3] = {
+                cameraDirectionX,
+                cameraDirectionY,
+                cameraDirectionZ,
+            };
+            ospSetParam(camera, "direction", OSP_VEC3F, direction);
 
-        xCommit(camera);
-    });
+            xCommit(camera);
+        });
 
-    OSPWorld world;
-    world = ({
         OSPWorld world;
-        world = ospNewWorld();
-
-        OSPInstance instance;
-        instance = ({
-            OSPGroup group;
-            group = ({
-                OSPGroup group;
-                group = ospNewGroup();
-
-                OSPVolumetricModel volume;
-                volume = ({
-                    OSPVolume volume;
-                    volume = ({
-                        OSPVolume volume;
-                        const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
-                        OSPDataType dataType = OSP_FLOAT;
-                        uint64_t d1 = 432;
-                        uint64_t d2 = 432;
-                        uint64_t d3 = 432;
-                        volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-                        xCommit(volume);
-                    });
-
-                    OSPVolumetricModel model;
-                    model = ospNewVolumetricModel(volume);
-
-                    OSPTransferFunction transferFunction;
-                    transferFunction = ({
-                        OSPTransferFunction transferFunction;
-                        const char *colorName = "greyscale";
-                        const char *opacityName = "ramp";
-                        transferFunction = xNewTransferFunction(colorName, opacityName);
-
-                        float value[2] = { 0.0f, 0.130518f };
-                        ospSetParam(transferFunction, "value", OSP_BOX1F, value);
-
-                        xCommit(transferFunction);
-                    });
-                    ospSetObject(model, "transferFunction", transferFunction);
-
-                    xCommit(model);
-                });
-                ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
-
-                xCommit(group);
-            });
+        world = ({
+            OSPWorld world;
+            world = ospNewWorld();
 
             OSPInstance instance;
-            instance = ospNewInstance(group);
+            instance = ({
+                OSPInstance instance;
+                instance = ospNewInstance(nullptr);
 
-            xCommit(instance);
+                OSPGroup group;
+                group = ({
+                    OSPGroup group;
+                    group = ospNewGroup();
+
+                    OSPVolumetricModel volume;
+                    volume = ({
+                        OSPVolumetricModel model;
+                        model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+
+                        xCommit(model);
+                    });
+                    ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
+                    ospRelease(volume);
+
+                    xCommit(group);
+                });
+                ospSetObject(instance, "group", group);
+                ospRelease(group);
+
+                xCommit(instance);
+            });
+            ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
+            ospRelease(instance);
+
+            // OSPLight light;
+            // light = ({
+            //     OSPLight light;
+            //     const char *type = "ambient";
+            //     light = ospNewLight(type);
+
+            //     float color[3] = { 1.0f, 1.0f, 1.0f };
+            //     ospSetParam(light, "color", OSP_VEC3F, color);
+
+            //     float intensity[1] = { 100.0f };
+            //     ospSetParam(light, "intensity", OSP_FLOAT, intensity);
+
+            //     xCommit(light);
+            // });
+            // ospSetObjectAsData(world, "light", OSP_LIGHT, light);
+
+            xCommit(world);
         });
-        ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
 
-        // OSPLight light;
-        // light = ({
-        //     OSPLight light;
-        //     const char *type = "ambient";
-        //     light = ospNewLight(type);
+        ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
 
-        //     float color[3] = { 1.0f, 1.0f, 1.0f };
-        //     ospSetParam(light, "color", OSP_VEC3F, color);
+        size_t imageLength;
+        void *imageData;
+        std::tie(imageLength, imageData) = ({
+            const void *rgba;
+            OSPFrameBufferChannel channel = OSP_FB_COLOR;
+            rgba = ospMapFrameBuffer(frameBuffer, channel);
 
-        //     float intensity[1] = { 100.0f };
-        //     ospSetParam(light, "intensity", OSP_FLOAT, intensity);
+            size_t length;
+            int width = imageResolution;
+            int height = imageResolution;
+            static size_t size = 0;
+            static void *data = nullptr;
+            length = xWriteJPG(rgba, width, height, &size, &data);
 
-        //     xCommit(light);
-        // });
-        // ospSetObjectAsData(world, "light", OSP_LIGHT, light);
+            // const char *filename = "out.jpg";
+            // xWriteBytes(filename, length, data);
+            // std::fprintf(stdout, "Wrote %zu bytes to %s\n", length, filename);
 
-        xCommit(world);
-    });
+            // stbi_write_png("out.png", 256, 256, 4, rgba, 0);
 
-    ({
-        auto bounds = ospGetBounds(world);
-        std::fprintf(stderr, "ospGetBounds(world) = { lower = { %f, %f, %f }, upper = { %f, %f, %f } }\n",
-            bounds.lower[0],
-            bounds.lower[1],
-            bounds.lower[2],
-            bounds.upper[0],
-            bounds.upper[1],
-            bounds.upper[2]);
-    });
+            ospUnmapFrameBuffer(rgba, frameBuffer);
 
-    ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
+            std::make_tuple(length, data);
+        });
 
-    ({
-        const void *rgba;
-        OSPFrameBufferChannel channel = OSP_FB_COLOR;
-        rgba = ospMapFrameBuffer(frameBuffer, channel);
-
-        int width = 256;
-        int height = 256;
-        size_t size = 0;
-        void *data = nullptr;
-        xWriteJPG(rgba, width, height, &size, &data);
-
-        const char *filename = "out.jpg";
-        xWriteBytes(filename, size, data);
-        std::fprintf(stdout, "Wrote %zu bytes to %s\n", size, filename);
-
-        // stbi_write_png("out.png", 256, 256, 4, rgba, 0);
-
-        ospUnmapFrameBuffer(rgba, frameBuffer);
-    });
-
-    // ospShutdown();
-
-    std::fprintf(stdout, "done shutting down\n");
+        std::cout.write(reinterpret_cast<const char *>(&imageLength), sizeof(imageLength));
+        std::cout.write(static_cast<const char *>(imageData), imageLength);
+        std::cout.flush();
+    }
 
     return 0;
 }

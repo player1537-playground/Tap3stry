@@ -39,6 +39,7 @@ docker_start=(
     --mount="type=bind,src=/etc/passwd,dst=/etc/passwd,readonly=true"
     --mount="type=bind,src=/etc/group,dst=/etc/group,readonly=true"
     --mount="type=bind,src=/mnt/seenas2/data,dst=/mnt/seenas2/data,readonly=true"
+    --net=host
 )
 docker_exec=(
 )

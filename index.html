@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Tap3stry Test Page</title>
+<body>
+<p><img id="image" src="/image/supernova/1.0/0.0/1.0/0.0/1.0/0.0/-1.0/0.0/-1.0/256/,">
+<p><button id="button">Stop</button>
+<script type="module">
+let resolve, reject;
+image.onload = onload;
+image.onerror = onerror;
+button.onclick = onclick;
+
+for (let i=0, n=16;; ++i) {
+    const x = Math.cos(i*Math.PI/n);
+    const y = 0.0;
+    const z = Math.sin(i*Math.PI/n);
+
+    let timeoutId = null;
+    await new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+
+        timeoutId = setTimeout(ontimeout, 1000);
+        image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/256/,background,38/36/54/0`;
+    });
+
+    clearTimeout(timeoutId);
+}
+
+function ontimeout() {
+    resolve();
+}
+
+function onload() {
+    resolve();
+}
+
+function onerror() {
+    reject();
+}
+
+function onclick() {
+    reject();
+}
+</script>
