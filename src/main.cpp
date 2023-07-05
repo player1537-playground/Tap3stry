@@ -7,6 +7,7 @@
 #include <vector> // std::vector
 #include <tuple> // std::make_tuple, std::tie
 #include <iostream> // std::cin
+#include <map> // std::map
 
 //ospray
 #include <ospray/ospray.h>
@@ -200,59 +201,63 @@ static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dat
     return volume;
 }
 
-static OSPData xNewColorMap(const std::string &name) {
-    static float viridis[][3] = {
-        { 0.267f, 0.005f, 0.329f },
-        { 0.279f, 0.175f, 0.483f },
-        { 0.230f, 0.322f, 0.546f },
-        { 0.173f, 0.449f, 0.558f },
-        { 0.128f, 0.567f, 0.551f },
-        { 0.158f, 0.684f, 0.502f },
-        { 0.369f, 0.789f, 0.383f },
-        { 0.678f, 0.864f, 0.190f },
-        { 0.993f, 0.906f, 0.144f },
-    };
+static std::map<std::string, std::vector<std::tuple<float, float, float>>> colorMaps{
+#   include "colormaps.h"
+};
 
-    static float greyscale[][3] = {
-        { 0.0f, 0.0f, 0.0f },
-        { 1.0f, 1.0f, 1.0f },
-    };
+static OSPData xNewColorMap(const std::string &name) {
+    static std::map<std::string, OSPData> loadedMaps;
+
+    if (loadedMaps.find(name) != loadedMaps.end()) {
+        return loadedMaps[name];
+    }
+
+    if (!(colorMaps.find(name) != colorMaps.end())) {
+        std::fprintf(stderr, "ERROR: Colormap not found: %s\n", name.c_str());
+        return nullptr;
+    }
 
     OSPData data;
-    const void *sharedData =
-        name == "viridis" ? viridis :
-        name == "greyscale" ? greyscale :
-        nullptr;
+    const void *sharedData = colorMaps[name].data();
     OSPDataType dataType = OSP_VEC3F;
-    uint64_t numItems1 =
-        name == "viridis" ? sizeof(viridis)/sizeof(*viridis) :
-        name == "greyscale" ? sizeof(greyscale)/sizeof(*greyscale) :
-        0;
+    uint64_t numItems1 = colorMaps[name].size();
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
     std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
 
+    ospRetain(data);
+    loadedMaps[name] = data;
+
     return data;
 }
 
+static std::map<std::string, std::vector<float>> opacityMaps{
+#   include "opacitymaps.h"
+};
+
 static OSPData xNewOpacityMap(const std::string &name) {
-    static float ramp[][1] = {
-        { 0.0f },
-        { 1.0f },
-    };
+    static std::map<std::string, OSPData> loadedMaps;
+
+    if (loadedMaps.find(name) != loadedMaps.end()) {
+        return loadedMaps[name];
+    }
+
+    if (!(opacityMaps.find(name) != opacityMaps.end())) {
+        std::fprintf(stderr, "ERROR: Opacity map not found: %s\n", name.c_str());
+        return nullptr;
+    }
 
     OSPData data;
-    const void *sharedData =
-        name == "ramp" ? ramp :
-        nullptr;
+    const void *sharedData = opacityMaps[name].data();
     OSPDataType dataType = OSP_FLOAT;
-    uint64_t numItems1 =
-        name == "ramp" ? sizeof(ramp)/sizeof(*ramp) :
-        0;
+    uint64_t numItems1 = opacityMaps[name].size();
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+    ospRetain(data);
+
+    loadedMaps[name] = data;
 
     return data;
 }

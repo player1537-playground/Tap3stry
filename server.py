@@ -138,8 +138,8 @@ def image(options: str):
     response = _g_renderer.send(RenderingRequest(
         imageResolution=resolution,
         volumeName=dataset,
-        colorMapName='viridis',
-        opacityMapName='ramp',
+        colorMapName='spectralReverse',
+        opacityMapName='reverseRamp',
         cameraPosition=(px, py, pz),
         cameraUp=(ux, uy, uz),
         cameraDirection=(dx, dy, dz),
