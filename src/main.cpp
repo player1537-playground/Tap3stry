@@ -9,6 +9,7 @@
 
 //ospray
 #include <ospray/ospray.h>
+#include <ospray/ospray_util.h>
 
 //stb
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -152,49 +153,81 @@ static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, 
     
         xCommit(data);
     });
-    ospSetParam(volume, "data", OSP_DATA, &data);
+    ospSetObject(volume, "data", data);
 
-    // float gridOrigin[3] = { -0.5f, -0.5f, -0.5f };
-    // std::fprintf(stderr, "gridOrigin = %f %f %f\n", gridOrigin[0], gridOrigin[1], gridOrigin[2]);
-    // ospSetParam(volume, "gridOrigin", OSP_VEC3F, gridOrigin);
+    float gridOrigin[3] = { -0.5f, -0.5f, -0.5f };
+    std::fprintf(stderr, "gridOrigin = %f %f %f\n", gridOrigin[0], gridOrigin[1], gridOrigin[2]);
+    ospSetParam(volume, "gridOrigin", OSP_VEC3F, gridOrigin);
 
     float gridSpacing[3] = { 1.0f/d1, 1.0f/d2, 1.0f/d3 };
     std::fprintf(stderr, "gridSpacing = %f %f %f\n", gridSpacing[0], gridSpacing[1], gridSpacing[2]);
     ospSetParam(volume, "gridSpacing", OSP_VEC3F, gridSpacing);
 
-    int cellCentered = 0;
-    ospSetParam(volume, "cellCentered", OSP_BOOL, &cellCentered);
+    // int cellCentered = 0;
+    // ospSetParam(volume, "cellCentered", OSP_BOOL, &cellCentered);
 
     return volume;
 }
 
-static OSPTransferFunction xNewTransferFunction(const std::string &colorName, const std::string &opacityName) {
+static OSPData xNewNamedColorMap(const std::string &name) {
     static float viridis[][3] = {
-        { 0.267, 0.005, 0.329 },
-        { 0.279, 0.175, 0.483 },
-        { 0.230, 0.322, 0.546 },
-        { 0.173, 0.449, 0.558 },
-        { 0.128, 0.567, 0.551 },
-        { 0.158, 0.684, 0.502 },
-        { 0.369, 0.789, 0.383 },
-        { 0.678, 0.864, 0.190 },
-        { 0.993, 0.906, 0.144 },
+        { 0.267f, 0.005f, 0.329f },
+        { 0.279f, 0.175f, 0.483f },
+        { 0.230f, 0.322f, 0.546f },
+        { 0.173f, 0.449f, 0.558f },
+        { 0.128f, 0.567f, 0.551f },
+        { 0.158f, 0.684f, 0.502f },
+        { 0.369f, 0.789f, 0.383f },
+        { 0.678f, 0.864f, 0.190f },
+        { 0.993f, 0.906f, 0.144f },
     };
 
-    static float ramp[] = {
-        0.0f,
-        0.1f,
-        0.2f,
-        0.3f,
-        0.4f,
-        0.5f,
-        0.6f,
-        0.7f,
-        0.8f,
-        0.9f,
-        1.0f,
+    static float greyscale[][3] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 1.0f, 1.0f, 1.0f },
     };
 
+    OSPData data;
+    const void *sharedData =
+        name == "viridis" ? viridis :
+        name == "greyscale" ? greyscale :
+        nullptr;
+    OSPDataType dataType = OSP_VEC3F;
+    uint64_t numItems1 =
+        name == "viridis" ? sizeof(viridis)/sizeof(*viridis) :
+        name == "greyscale" ? sizeof(greyscale)/sizeof(*greyscale) :
+        0;
+    uint64_t numItems2 = 1;
+    uint64_t numItems3 = 1;
+    std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
+    data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+
+    return data;
+}
+
+static OSPData xNewNamedOpacityMap(const std::string &name) {
+    static float ramp[][1] = {
+        { 0.0f },
+        { 1.0f },
+    };
+
+    OSPData data;
+    const void *sharedData =
+        name == "ramp" ? ramp :
+        nullptr;
+    OSPDataType dataType = OSP_FLOAT;
+    uint64_t numItems1 =
+        name == "ramp" ? sizeof(ramp)/sizeof(*ramp) :
+        0;
+    uint64_t numItems2 = 1;
+    uint64_t numItems3 = 1;
+    std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
+    data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+
+    return data;
+}
+
+static OSPTransferFunction xNewTransferFunction(const std::string &colorName, const std::string &opacityName) {
     OSPTransferFunction transferFunction;
     const char *type = "piecewiseLinear";
     transferFunction = ospNewTransferFunction(type);
@@ -202,36 +235,16 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     OSPData color;
     color = ({
         OSPData data;
-        const void *sharedData =
-            colorName == "viridis" ? viridis :
-            nullptr;
-        OSPDataType dataType = OSP_VEC3F;
-        uint64_t numItems1 =
-            colorName == "viridis" ? sizeof(viridis)/sizeof(*viridis) :
-            0;
-        uint64_t numItems2 = 1;
-        uint64_t numItems3 = 1;
-        std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
-        data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+        data = xNewNamedColorMap(colorName);
         
         xCommit(data);
     });
-    ospSetParam(transferFunction, "color", OSP_DATA, &color);
+    ospSetObject(transferFunction, "color", color);
 
     OSPData opacity;
     opacity = ({
         OSPData data;
-        const void *sharedData =
-            opacityName == "ramp" ? ramp :
-            nullptr;
-        OSPDataType dataType = OSP_FLOAT;
-        uint64_t numItems1 =
-            opacityName == "ramp" ? sizeof(ramp)/sizeof(*ramp) :
-            0;
-        uint64_t numItems2 = 1;
-        uint64_t numItems3 = 1;
-        std::fprintf(stderr, "sharedData=%p numItems=%zu\n", sharedData, numItems1);
-        data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+        data = xNewNamedOpacityMap(opacityName);
         
         xCommit(data);
     });
@@ -300,10 +313,16 @@ int main(int argc, const char **argv) {
         const char *type = "perspective";
         camera = ospNewCamera(type);
 
-        float position[3] = { -1.0f, 0.0f, -1.0f };
+        float fovy[1] = { 180.0f };
+        ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
+
+        float position[3] = { 0.0f, 0.0f, 2.0f };
         ospSetParam(camera, "position", OSP_VEC3F, position);
 
-        float direction[3] = { 1.0f, 0.0f, 1.0f };
+        float up[3] = { 0.0f, 1.0f, 0.0f };
+        ospSetParam(camera, "up", OSP_VEC3F, up);
+
+        float direction[3] = { 0.0f, 0.0f, -1.0f };
         ospSetParam(camera, "direction", OSP_VEC3F, direction);
 
         xCommit(camera);
@@ -314,8 +333,8 @@ int main(int argc, const char **argv) {
         OSPWorld world;
         world = ospNewWorld();
 
-        std::vector<OSPInstance> *instances = new std::vector<OSPInstance>();
-        instances->push_back(({
+        OSPInstance instance;
+        instance = ({
             OSPInstance instance;
             instance = ospNewInstance(nullptr);
 
@@ -332,21 +351,21 @@ int main(int argc, const char **argv) {
                     OSPVolume volume;
                     volume = ({
                         OSPVolume volume;
-                        const char *filename = "/mnt/seenas2/data/standalone/data/teapot.raw";
+                        const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
                         OSPDataType dataType = OSP_FLOAT;
-                        uint64_t d1 = 256;
-                        uint64_t d2 = 256;
-                        uint64_t d3 = 178;
+                        uint64_t d1 = 432;
+                        uint64_t d2 = 432;
+                        uint64_t d3 = 432;
                         volume = xNewVolume(filename, dataType, d1, d2, d3);
 
                         xCommit(volume);
                     });
-                    ospSetParam(volModel, "volume", OSP_VOLUME, &volume);
+                    ospSetObject(volModel, "volume", volume);
 
                     OSPTransferFunction transferFunction;
                     transferFunction = ({
                         OSPTransferFunction transferFunction;
-                        const char *colorName = "viridis";
+                        const char *colorName = "greyscale";
                         const char *opacityName = "ramp";
                         transferFunction = xNewTransferFunction(colorName, opacityName);
 
@@ -355,7 +374,7 @@ int main(int argc, const char **argv) {
 
                         xCommit(transferFunction);
                     });
-                    ospSetParam(volModel, "transferFunction", OSP_TRANSFER_FUNCTION, &transferFunction);
+                    ospSetObject(volModel, "transferFunction", transferFunction);
 
                     xCommit(volModel);
                 }));
@@ -372,31 +391,18 @@ int main(int argc, const char **argv) {
 
                     xCommit(data);
                 });
-                ospSetParam(group, "volume", OSP_DATA, &volume);
+                ospSetObject(group, "volume", volume);
 
                 xCommit(group);
             });
-            ospSetParam(instance, "group", OSP_GROUP, &group);
+            ospSetObject(instance, "group", group);
 
             xCommit(instance);
-        }));
-
-        OSPData instance;
-        instance = ({
-            OSPData data;
-            const void *sharedData = instances->data();
-            OSPDataType dataType = OSP_INSTANCE;
-            uint64_t numItems1 = instances->size();
-            uint64_t numItems2 = 1;
-            uint64_t numItems3 = 1;
-            data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
-
-            xCommit(data);
         });
-        ospSetParam(world, "instance", OSP_DATA, &instance);
+        ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
 
-        std::vector<OSPLight> *lights = new std::vector<OSPLight>();
-        lights->push_back(({
+        OSPLight light;
+        light = ({
             OSPLight light;
             const char *type = "ambient";
             light = ospNewLight(type);
@@ -408,28 +414,13 @@ int main(int argc, const char **argv) {
             ospSetParam(light, "intensity", OSP_FLOAT, &intensity);
 
             xCommit(light);
-        }));
-
-        OSPData light = ({
-            OSPData data;
-            const void *sharedData = lights->data();
-            OSPDataType dataType = OSP_LIGHT;
-            uint64_t numItems1 = lights->size();
-            uint64_t numItems2 = 1;
-            uint64_t numItems3 = 1;
-            data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
-
-            xCommit(data);
         });
-        ospSetParam(world, "light", OSP_DATA, &light);
+        ospSetObjectAsData(world, "light", OSP_LIGHT, light);
 
         xCommit(world);
     });
 
-    OSPFuture future;
-    future = ospRenderFrame(frameBuffer, renderer, camera, world);
-    
-    ospWait(future, OSP_TASK_FINISHED);
+    ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
 
     size_t jpegsize;
     void *jpegdata;
@@ -447,6 +438,17 @@ int main(int argc, const char **argv) {
         ospUnmapFrameBuffer(rgba, frameBuffer);
         
         std::make_tuple(size, data);
+    });
+
+    ({
+        auto bounds = ospGetBounds(world);
+        std::fprintf(stderr, "ospGetBounds(world) = { lower = { %f, %f, %f }, upper = { %f, %f, %f } }\n",
+            bounds.lower[0],
+            bounds.lower[1],
+            bounds.lower[2],
+            bounds.upper[0],
+            bounds.upper[1],
+            bounds.upper[2]);
     });
 
     xwrite("out.jpg", jpegsize, jpegdata);

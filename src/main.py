@@ -104,17 +104,17 @@ def make_render_worker() -> Generator[RenderingResponse, RenderingRequest, None]
     while True:
         prev_request, request = request, yield response
 
-        if request.image != prev_request.image:
+        if prev_request is None or request.image != prev_request.image:
             frame.createChild("windowSize", "vec2i",
                 sg.Any(sg.vec2i(request.image.size, request.image.size)))
         
-        if request.camera != prev_request.camera:
+        if prev_request is None or request.camera != prev_request.camera:
             camera.createChild("position", "vec3f",
                 sg.Any(sg.vec3f(*map(float, request.camera.position))))
             camera.createChild("direction", "vec3f",
                 sg.Any(sg.vec3f(*map(float, request.camera.direction))))
         
-        if request.volume != prev_request.volume:
+        if prev_request is None or request.volume != prev_request.volume:
             world.remove(prev_request.volume.name)
             volume = request.volume.load()
             world.add(volume)
@@ -148,8 +148,14 @@ def make_render_worker() -> Generator[RenderingResponse, RenderingRequest, None]
         )
 
 
+def make_http_worker():
+    pass
+
+
 def main():
     renderer = make_render_worker()
+    next(renderer)
+
     renderer.send(RenderingRequest(
         frame=FrameConfig(
         ),
@@ -157,8 +163,6 @@ def main():
         ),
         volume=VolumeConfig(
             name="myvolume",
-            # path=Path("/mnt/seenas2/data/standalone/data/teapot.raw"),
-            # shape=(256, 256, 178),
             path=Path.cwd() / 'supernova.raw',
             shape=(432, 432, 432),
             type=OSP_FLOAT,
