@@ -25,13 +25,13 @@ quant = typing.NewType('quant', decimal.Context(
 ).create_decimal)
 
 
-@dataclass(eq=True, frozen=True, kw_only=True)
+@dataclass(eq=True, frozen=True)
 class VolumeConfig:
     name: str
     path: Path
     shape: Tuple[int, int, int]
-    type: ClassVar[int] = OSP_FLOAT
-    origin: ClassVar[Tuple[quant, quant, quant]] = (quant(-0.5), quant(-0.5), quant(-0.5))
+    type: int
+    origin: Tuple[quant, quant, quant]
     spacing: Tuple[quant, quant, quant]
 
     @functools.lru_cache
@@ -60,26 +60,27 @@ class VolumeConfig:
         return root
 
 
-@dataclass(eq=True, frozen=True, kw_only=True)
+@dataclass(eq=True, frozen=True)
 class ImageConfig:
     size: Tuple[int, int]
     format: ClassVar[str] = 'jpg'
 
 
-@dataclass(eq=True, frozen=True, kw_only=True)
+@dataclass(eq=True, frozen=True)
 class CameraConfig:
     position: Tuple[quant, quant, quant]
     direction: Tuple[quant, quant, quant]
+    up: Tuple[quant, quant, quant]
 
 
-@dataclass(eq=True, frozen=True, kw_only=True)
+@dataclass(eq=True, frozen=True)
 class RenderingRequest:
     volume: VolumeConfig
     camera: CameraConfig
-    frame: FrameConfig
+    image: ImageConfig
 
 
-@dataclass(frozen=True)
+@dataclass(eq=True, frozen=True)
 class RenderingResponse:
     image: bytes
 
@@ -102,20 +103,23 @@ def make_render_worker() -> Generator[RenderingResponse, RenderingRequest, None]
     prev_request = None
     response = None
     while True:
-        prev_request, request = request, yield response
+        request = yield response
 
         if prev_request is None or request.image != prev_request.image:
             frame.createChild("windowSize", "vec2i",
-                sg.Any(sg.vec2i(request.image.size, request.image.size)))
+                sg.Any(sg.vec2i(*map(int, request.image.size))))
         
         if prev_request is None or request.camera != prev_request.camera:
             camera.createChild("position", "vec3f",
                 sg.Any(sg.vec3f(*map(float, request.camera.position))))
             camera.createChild("direction", "vec3f",
                 sg.Any(sg.vec3f(*map(float, request.camera.direction))))
+            camera.createChild("up", "vec3f",
+                sg.Any(sg.vec3f(*map(float, request.camera.up))))
         
         if prev_request is None or request.volume != prev_request.volume:
-            world.remove(prev_request.volume.name)
+            if prev_request is not None:
+                world.remove(prev_request.volume.name)
             volume = request.volume.load()
             world.add(volume)
 
@@ -144,8 +148,10 @@ def make_render_worker() -> Generator[RenderingResponse, RenderingRequest, None]
             image = f.read()
         
         response = RenderingResponse(
-            image=request.frame.render(frame),
+            image=image,
         )
+
+        prev_request = request
 
 
 def make_http_worker():
@@ -156,36 +162,27 @@ def main():
     renderer = make_render_worker()
     next(renderer)
 
-    renderer.send(RenderingRequest(
-        frame=FrameConfig(
+    response = renderer.send(RenderingRequest(
+        image=ImageConfig(
+            size=(256, 256),
+            format='jpg',
         ),
         camera=CameraConfig(
+            position=(quant(1.0), quant(0.0), quant(1.0)),
+            direction=(quant(-1.0), quant(0.0), quant(-1.0)),
+            up=(quant(0.0), quant(1.0), quant(0.0)),
         ),
         volume=VolumeConfig(
             name="myvolume",
             path=Path.cwd() / 'supernova.raw',
             shape=(432, 432, 432),
             type=OSP_FLOAT,
-            origin=(-0.5, -0.5, -0.5),
-            spacing=(1./432, 1./432, 1./432),
+            origin=(quant(-0.5), quant(-0.5), quant(-0.5)),
+            spacing=(quant(1./432), quant(1./432), quant(1./432)),
         ),
     ))
-        
-    volume = _make_volume(
-        name="myvolume",
-        # path=Path("/mnt/seenas2/data/standalone/data/teapot.raw"),
-        # shape=(256, 256, 178),
-        path=Path.cwd() / 'supernova.raw',
-        shape=(432, 432, 432),
-        type=OSP_FLOAT,
-        origin=(-0.5, -0.5, -0.5),
-        spacing=(1./432, 1./432, 1./432),
-        lights=lights,
-        materials=materials,
-    )
-    world.add(volume)
 
-
+    Path('out.jpg').write_bytes(response.image)
 
 
 def cli(args: Optional[List[str]]):
