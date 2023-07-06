@@ -189,7 +189,7 @@ static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dat
 }
 
 static std::map<std::string, std::vector<std::tuple<float, float, float>>> colorMaps{
-#   include "colormaps.h"
+#   include "detail/colormaps.h"
 };
 
 static OSPData xNewColorMap(const std::string &name) {
@@ -219,7 +219,7 @@ static OSPData xNewColorMap(const std::string &name) {
 }
 
 static std::map<std::string, std::vector<float>> opacityMaps{
-#   include "opacitymaps.h"
+#   include "detail/opacitymaps.h"
 };
 
 static OSPData xNewOpacityMap(const std::string &name) {
