@@ -17,8 +17,6 @@ for (let i=0; i<ROWS; ++i) {
 
     for (let j=0; j<COLS; ++j) {
         const image = new Image();
-        image.onload = onload;
-        image.onerror = onerror;
 
         $row.appendChild(image);
 
@@ -36,9 +34,6 @@ for (let i=0, n=16;; ++i) {
     const promises = [];
     for (let j=0, m=images.length; j<m; ++j) {
         const image = images[j];
-
-        image.onload = onload;
-        image.onerror = onerror;
 
         const promise = new Promise((resolve, reject) => {
             image.onload = resolve;

@@ -39,16 +39,33 @@ quant = decimal.Context(
 
 @dataclass(eq=True, frozen=True)
 class RenderingRequest:
-    imageResolution: int
+    imageWidth: int
+    imageHeight: int
     volumeName: str
     colorMapName: str
     opacityMapName: str
     cameraPosition: Tuple[float, float, float]
     cameraUp: Tuple[float, float, float]
     cameraDirection: Tuple[float, float, float]
+    cameraRowIndex: int
+    cameraRowCount: int
+    cameraColIndex: int
+    cameraColCount: int
     backgroundColor: Tuple[float, float, float, float]
-    regionRow: Tuple[int, int]
-    regionCol: Tuple[int, int]
+
+    @property
+    def cameraImageStart(self) -> Tuple[float, float]:
+        return (
+            (self.cameraColIndex + 0.0) / self.cameraColCount,  # left
+            1.0 - (self.cameraRowIndex + 0.0) / self.cameraRowCount,  # bottom
+        )
+    
+    @property
+    def cameraImageEnd(self) -> Tuple[float, float]:
+        return (
+            (self.cameraColIndex + 1.0) / self.cameraColCount,  # right
+            1.0 - (self.cameraRowIndex + 1.0) / self.cameraRowCount,  # top
+        )
 
     def write(self, fileobj: BinaryIO):
         def write(s: str):
@@ -56,16 +73,13 @@ class RenderingRequest:
             s = s.encode('utf-8')
             fileobj.write(s)
 
-        write('image')
-        write(f'{self.imageResolution}')
-
         write('renderer')
         write(' '.join([
             f'{x}'
             for x in self.backgroundColor
         ]))
 
-        write('volume')
+        write('world')
         write(f'{self.volumeName}')
         write(f'{self.colorMapName}')
         write(f'{self.opacityMapName}')
@@ -85,14 +99,16 @@ class RenderingRequest:
         ]))
         write(' '.join([
             f'{x}'
-            for x in self.regionRow
+            for x in self.cameraImageStart
         ]))
         write(' '.join([
             f'{x}'
-            for x in self.regionCol
+            for x in self.cameraImageEnd
         ]))
 
         write('render')
+        write(f'{self.imageWidth}')
+        write(f'{self.imageHeight}')
 
         fileobj.flush()
 
@@ -171,16 +187,19 @@ def image(options: str):
 
     with _g_renderer_lock:
         response = _g_renderer.send(RenderingRequest(
-            imageResolution=resolution,
+            imageWidth=resolution,
+            imageHeight=resolution,
             volumeName=dataset,
             colorMapName=colormap,
             opacityMapName=opacitymap,
             cameraPosition=(px, py, pz),
             cameraUp=(ux, uy, uz),
             cameraDirection=(dx, dy, dz),
+            cameraRowIndex=row,
+            cameraRowCount=nrows,
+            cameraColIndex=col,
+            cameraColCount=ncols,
             backgroundColor=(br, bg, bb, ba),
-            regionRow=(row, nrows),
-            regionCol=(col, ncols),
         ))
 
     return response.imageData, { 'Content-Type': 'image/jpg' }

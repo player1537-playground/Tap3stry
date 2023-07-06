@@ -17,7 +17,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-static void dief(const char *fmt, ...) {
+static void xDie(const char *fmt, ...) {
     std::va_list args;
     va_start(args, fmt);
     std::fprintf(stderr, "Error: ");
@@ -25,10 +25,6 @@ static void dief(const char *fmt, ...) {
     std::fprintf(stderr, "\n");
     va_end(args);
     std::exit(EXIT_FAILURE);
-}
-
-static void die(const char *msg) {
-    return dief("%s", msg);
 }
 
 struct stbiContext {
@@ -53,7 +49,7 @@ static void stbiCallback(void *context_, void *data, int size) {
     context->offset += size;
 }
 
-static size_t xWriteJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
+static size_t xToJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
     if (*outsize == 0) {
         *outsize = 1024;
         *outdata = std::malloc(*outsize);
@@ -73,12 +69,12 @@ static size_t xWriteJPG(const void *rgba, int width, int height, size_t *outsize
     const void *data = rgba;
     int quality = 95;
     success = stbi_write_jpg_to_func(func, context_, w, h, comp, data, quality);
-    if (!success) die("Failed to stbi_write_jpg_to_func");
+    if (!success) xDie("Failed to stbi_write_jpg_to_func");
 
     return context.offset;
 }
 
-static size_t xWritePNG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
+static size_t xToPNG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
     if (*outsize == 0) {
         *outsize = 1024;
         *outdata = std::malloc(*outsize);
@@ -98,7 +94,7 @@ static size_t xWritePNG(const void *rgba, int width, int height, size_t *outsize
     const void *data = rgba;
     int stride = 0;
     success = stbi_write_png_to_func(func, context_, w, h, comp, data, stride);
-    if (!success) die("Failed to stbi_write_png_to_func");
+    if (!success) xDie("Failed to stbi_write_png_to_func");
 
     return context.offset;
 }
@@ -106,11 +102,11 @@ static size_t xWritePNG(const void *rgba, int width, int height, size_t *outsize
 static void xWriteBytes(const std::string &filename, size_t size, void *data) {
     std::FILE *file;
     file = fopen(filename.c_str(), "wb");
-    if (!file) dief("Failed to fopen: %s", filename.c_str());
+    if (!file) xDie("Failed to fopen: %s", filename.c_str());
 
     std::size_t nwrite;
     nwrite = std::fwrite(data, 1, size, file);
-    if (nwrite < size) dief("Failed to write all: %zu < %zu", nwrite, size);
+    if (nwrite < size) xDie("Failed to write all: %zu < %zu", nwrite, size);
 
     std::fclose(file);
 }
@@ -118,26 +114,26 @@ static void xWriteBytes(const std::string &filename, size_t size, void *data) {
 static void *xReadBytes(const std::string &filename) {
     std::FILE *file;
     file = fopen(filename.c_str(), "rb");
-    if (!file) dief("Failed to fopen: %s", filename.c_str());
+    if (!file) xDie("Failed to fopen: %s", filename.c_str());
 
     {
         int rv = std::fseek(file, 0, SEEK_END);
-        if (rv) dief("Failed to fseek: %s", filename.c_str());
+        if (rv) xDie("Failed to fseek: %s", filename.c_str());
     }
 
     long nbyte;
     nbyte = std::ftell(file);
-    if (nbyte < 0) dief("Failed to ftell: %s", filename.c_str());
+    if (nbyte < 0) xDie("Failed to ftell: %s", filename.c_str());
 
     {
         int rv = std::fseek(file, 0, SEEK_SET);
-        if (rv) dief("Failed to fseek: %s", filename.c_str());
+        if (rv) xDie("Failed to fseek: %s", filename.c_str());
     }
 
     void *data;
     data = new std::byte[nbyte];
     std::size_t nread = std::fread(data, sizeof(std::byte), nbyte, file);
-    if (nread < nbyte) dief("Failed to read everything: %zu < %zu", nread, nbyte);
+    if (nread < nbyte) xDie("Failed to read everything: %zu < %zu", nread, nbyte);
 
     std::fclose(file);
 
@@ -306,7 +302,11 @@ static OSPVolume xNewVolume(const std::string &name) {
     return volume;
 }
 
-static OSPVolumetricModel xNewVolumetricModel(const std::string &volumeName, const std::string &colorMapName, const std::string &opacityMapName) {
+static OSPVolumetricModel xNewVolumetricModel(
+    const std::string &volumeName,
+    const std::string &colorMapName,
+    const std::string &opacityMapName
+) {
     OSPVolumetricModel model;
     model = ospNewVolumetricModel(nullptr);
 
@@ -344,11 +344,149 @@ static void xStatusCallback(void *userData, const char *messageText) {
     std::fprintf(stderr, "OSPStatus: %s\n", messageText);
 }
 
+static OSPWorld xNewWorld(
+    const std::string &volumeName,
+    const std::string &colorMapName,
+    const std::string &opacityMapName
+) {
+    OSPWorld world;
+    world = ospNewWorld();
+
+    OSPInstance instance;
+    instance = ({
+        OSPInstance instance;
+        instance = ospNewInstance(nullptr);
+
+        OSPGroup group;
+        group = ({
+            OSPGroup group;
+            group = ospNewGroup();
+
+            OSPVolumetricModel volume;
+            volume = ({
+                OSPVolumetricModel model;
+                model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+
+                xCommit(model);
+            });
+            ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
+            ospRelease(volume);
+
+            xCommit(group);
+        });
+        ospSetObject(instance, "group", group);
+        ospRelease(group);
+
+        xCommit(instance);
+    });
+    ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
+    ospRelease(instance);
+
+    return world;
+}
+
+static OSPFrameBuffer xNewFrameBuffer(int width, int height) {
+    static std::map<std::tuple<int, int>, OSPFrameBuffer> cache;
+    auto key = std::make_tuple(width, height);
+
+    if (cache.find(key) != cache.end()) {
+        return cache[key];
+    }
+
+    OSPFrameBuffer frameBuffer;
+    OSPFrameBufferFormat format = OSP_FB_RGBA8;
+    uint32_t channels = OSP_FB_COLOR;
+    frameBuffer = ospNewFrameBuffer(width, height, format, channels);
+
+    ospRetain(frameBuffer);
+    cache[key] = frameBuffer;
+
+    return frameBuffer;
+}
+
+static OSPCamera xNewCamera(
+    const std::string &type,
+    float position[3],
+    float up[3],
+    float direction[3],
+    float imageStart[2],
+    float imageEnd[2]
+) {
+    using Key = std::tuple<std::string>;
+    static std::map<Key, OSPCamera> cache;
+
+    Key key = std::make_tuple(type);
+    if (cache.find(key) == cache.end()) {
+        OSPCamera camera;
+        camera = ospNewCamera(type.c_str());
+
+        ospRetain(camera);
+        cache[key] = camera;
+    }
+
+    OSPCamera camera;
+    camera = cache[key];
+
+    float fovy[1] = { 90.0f };
+    ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
+
+    ospSetParam(camera, "position", OSP_VEC3F, position);
+
+    ospSetParam(camera, "up", OSP_VEC3F, up);
+
+    ospSetParam(camera, "direction", OSP_VEC3F, direction);
+
+    // float imageStart[2] = {
+    //     xRead<float>(),  // left
+    //     xRead<float>(),  // bottom
+    //     // (regionCol + 0.0f) / regionColCount,  // left
+    //     // 1.0f - (regionRow + 0.0f) / regionRowCount,  // bottom
+    // };
+    ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
+
+    // float imageEnd[2] = {
+    //     xRead<float>(),  // right
+    //     xRead<float>(),  // top
+    //     // (regionCol + 1.0f) / regionColCount,  // right
+    //     // 1.0f - (regionRow + 1.0f) / regionRowCount,  // top
+    // };
+    ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
+    
+    return camera;
+}
+
+static OSPRenderer xNewRenderer(const std::string &type, float backgroundColor[4]) {
+    using Key = std::tuple<std::string>;
+    static std::map<Key, OSPRenderer> cache;
+
+    Key key = std::make_tuple(type);
+    if (cache.find(key) == cache.end()) {
+        OSPRenderer renderer;
+        renderer = ospNewRenderer(type.c_str());
+
+        ospRetain(renderer);
+        cache[key] = renderer;
+    }
+
+    OSPRenderer renderer;
+    renderer = cache[key];
+
+    ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
+
+    return renderer;
+}
+
+template <typename T>
+T xRead(std::istream &is=std::cin) {
+    T x;
+    is >> x;
+    return x;
+}
 
 int main(int argc, const char **argv) {
     OSPError ospInitError = ospInit(&argc, argv);
     if (ospInitError) {
-        dief("Failed to ospInit: %d", ospInitError);
+        xDie("Failed to ospInit: %d", ospInitError);
     }
 
     OSPDevice device;
@@ -367,200 +505,89 @@ int main(int argc, const char **argv) {
         device;
     });
 
-    int imageResolution = 256;
-    std::string volumeName = "supernova";
-    std::string colorMapName = "viridis";
-    std::string opacityMapName = "reverseRamp";
-    float cameraPositionX = 1.0f;
-    float cameraPositionY = 0.0f;
-    float cameraPositionZ = 1.0f;
-    float cameraUpX = 0.0f;
-    float cameraUpY = 1.0f;
-    float cameraUpZ = 0.0f;
-    float cameraDirectionX = -1.0f;
-    float cameraDirectionY =  0.0f;
-    float cameraDirectionZ = -1.0f;
-    int backgroundColorR = 0;
-    int backgroundColorG = 0;
-    int backgroundColorB = 0;
-    int backgroundColorA = 0;
-    int regionRow = 0;
-    int regionRowCount = 1;
-    int regionCol = 0;
-    int regionColCount = 1;
-
     OSPFrameBuffer frameBuffer;
     OSPWorld world;
     OSPRenderer renderer;
     OSPCamera camera;
 
     std::string key;
-    while (std::cin >> key) {
-        if (key == "image") {
-            std::cin
-                >> imageResolution
-                ;
+    while (std::cin >> key)
+    if (0) {
 
-            frameBuffer = ({
-                OSPFrameBuffer frameBuffer;
-                int size_x = imageResolution;
-                int size_y = imageResolution;
-                OSPFrameBufferFormat format = OSP_FB_RGBA8;
-                uint32_t channels = OSP_FB_COLOR;
-                frameBuffer = ospNewFrameBuffer(size_x, size_y, format, channels);
+    } else if (key == "world") {
+        world = ({
+            OSPWorld world;
+            auto volumeName = xRead<std::string>();
+            auto colorMapName = xRead<std::string>();
+            auto opacityMapName = xRead<std::string>();
+            world = xNewWorld(volumeName, colorMapName, opacityMapName);
 
-                xCommit(frameBuffer);
-            });
+            xCommit(world);
+        });
 
-            continue;
+        continue;
+    
+    } else if (key == "camera") {
+        camera = ({
+            OSPCamera camera;
+            const char *type = "perspective";
+            float position[3] = {
+                xRead<float>(),
+                xRead<float>(),
+                xRead<float>(),
+            };
+            float up[3] = {
+                xRead<float>(),
+                xRead<float>(),
+                xRead<float>(),
+            };
+            float direction[3] = {
+                xRead<float>(),
+                xRead<float>(),
+                xRead<float>(),
+            };
+            float imageStart[2] = {
+                xRead<float>(),  // left
+                xRead<float>(),  // bottom
+            };
+            float imageEnd[2] = {
+                xRead<float>(),  // right
+                xRead<float>(),  // top
+            };
+            camera = xNewCamera(type, position, up, direction, imageStart, imageEnd);
 
-        } else if (key == "volume") {
-            std::cin
-                >> volumeName
-                >> colorMapName
-                >> opacityMapName
-                ;
+            xCommit(camera);
+        });
 
-            world = ({
-                OSPWorld world;
-                world = ospNewWorld();
+        continue;
+    
+    } else if (key == "renderer") {
+        renderer = ({
+            OSPRenderer renderer;
+            const char *type = "ao";
+            float backgroundColor[4] = {
+                xRead<int>() / 255.0f,
+                xRead<int>() / 255.0f,
+                xRead<int>() / 255.0f,
+                xRead<int>() / 255.0f,
+            };
+            renderer = xNewRenderer(type, backgroundColor);
 
-                OSPInstance instance;
-                instance = ({
-                    OSPInstance instance;
-                    instance = ospNewInstance(nullptr);
+            xCommit(renderer);
+        });
+        continue;
 
-                    OSPGroup group;
-                    group = ({
-                        OSPGroup group;
-                        group = ospNewGroup();
+    } else if (key == "render") {
+        int width;
+        int height;
+        std::tie(frameBuffer, width, height) = ({
+            OSPFrameBuffer frameBuffer;
+            auto width = xRead<int>();
+            auto height = xRead<int>();
+            frameBuffer = xNewFrameBuffer(width, height);
 
-                        OSPVolumetricModel volume;
-                        volume = ({
-                            OSPVolumetricModel model;
-                            model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
-
-                            xCommit(model);
-                        });
-                        ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
-                        ospRelease(volume);
-
-                        xCommit(group);
-                    });
-                    ospSetObject(instance, "group", group);
-                    ospRelease(group);
-
-                    xCommit(instance);
-                });
-                ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
-                ospRelease(instance);
-
-                // OSPLight light;
-                // light = ({
-                //     OSPLight light;
-                //     const char *type = "ambient";
-                //     light = ospNewLight(type);
-
-                //     float color[3] = { 1.0f, 1.0f, 1.0f };
-                //     ospSetParam(light, "color", OSP_VEC3F, color);
-
-                //     float intensity[1] = { 100.0f };
-                //     ospSetParam(light, "intensity", OSP_FLOAT, intensity);
-
-                //     xCommit(light);
-                // });
-                // ospSetObjectAsData(world, "light", OSP_LIGHT, light);
-
-                xCommit(world);
-            });
-            continue;
-        
-        } else if (key == "camera") {
-            std::cin
-                >> cameraPositionX >> cameraPositionY >> cameraPositionZ
-                >> cameraUpX >> cameraUpY >> cameraUpZ
-                >> cameraDirectionX >> cameraDirectionY >> cameraDirectionZ
-                >> regionRow >> regionRowCount
-                >> regionCol >> regionColCount
-                ;
-
-            camera = ({
-                OSPCamera camera;
-                const char *type = "perspective";
-                camera = ospNewCamera(type);
-
-                float fovy[1] = { 90.0f };
-                ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
-
-                float position[3] = {
-                    cameraPositionX,
-                    cameraPositionY,
-                    cameraPositionZ,
-                };
-                ospSetParam(camera, "position", OSP_VEC3F, position);
-
-                float up[3] = {
-                    cameraUpX,
-                    cameraUpY,
-                    cameraUpZ,
-                };
-                ospSetParam(camera, "up", OSP_VEC3F, up);
-
-                float direction[3] = {
-                    cameraDirectionX,
-                    cameraDirectionY,
-                    cameraDirectionZ,
-                };
-                ospSetParam(camera, "direction", OSP_VEC3F, direction);
-
-                float imageStart[2] = {
-                    (regionCol + 0.0f) / regionColCount,  // left
-                    1.0f - (regionRow + 0.0f) / regionRowCount,  // bottom
-                };
-                ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
-
-                float imageEnd[2] = {
-                    (regionCol + 1.0f) / regionColCount,  // right
-                    1.0f - (regionRow + 1.0f) / regionRowCount,  // top
-                };
-                ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
-
-                xCommit(camera);
-            });
-
-            continue;
-        
-        } else if (key == "renderer") {
-            std::cin
-                >> backgroundColorR >> backgroundColorG >> backgroundColorB >> backgroundColorA
-                ;
-
-            renderer = ({
-                OSPRenderer renderer;
-                const char *type = "ao";
-                renderer = ospNewRenderer(type);
-
-                float backgroundColor[4] = {
-                    backgroundColorR / 255.0f,
-                    backgroundColorG / 255.0f,
-                    backgroundColorB / 255.0f,
-                    backgroundColorA / 255.0f,
-                };
-                ospSetParam(renderer, "backgroundColor", OSP_VEC4F, backgroundColor);
-
-                xCommit(renderer);
-            });
-            continue;
-
-        } else if (key == "render") {
-            // fall through
-        
-        } else {
-            std::fprintf(stderr, "Unknown key: %s\n", key.c_str());
-            continue;
-
-        }
-
+            std::make_tuple(xCommit(frameBuffer), width, height);
+        });
 
         ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
 
@@ -572,11 +599,9 @@ int main(int argc, const char **argv) {
             rgba = ospMapFrameBuffer(frameBuffer, channel);
 
             size_t length;
-            int width = imageResolution;
-            int height = imageResolution;
             static size_t size = 0;
             static void *data = nullptr;
-            length = xWriteJPG(rgba, width, height, &size, &data);
+            length = xToJPG(rgba, width, height, &size, &data);
 
             // const char *filename = "out.jpg";
             // xWriteBytes(filename, length, data);
@@ -592,6 +617,11 @@ int main(int argc, const char **argv) {
         std::cout.write(reinterpret_cast<const char *>(&imageLength), sizeof(imageLength));
         std::cout.write(static_cast<const char *>(imageData), imageLength);
         std::cout.flush();
+    
+    } else {
+        std::fprintf(stderr, "Unknown key: %s\n", key.c_str());
+        continue;
+
     }
 
     return 0;
