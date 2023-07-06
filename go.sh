@@ -13,100 +13,68 @@ go---docker() {
     exec "${self:?}" "$@"
 }
 
-go---ospray() {
-    pexec "${self:?}" ospray \
+go---virtualenv() {
+    pexec "${self:?}" virtualenv \
     exec "${self:?}" "$@"
 }
 
-go-osprayAsAService() {
-    pexec "${cmake_binary_dir:?}/osprayAsAService" \
+go-engine() {
+    pexec "${cmake_binary_dir:?}/tapestryEngine" \
         "$@" \
         ##
 }
 
-go-studioAsAService() {
-    pexec 
+go-server() {
+    pexec python3 "${cmake_source_dir:?}/src/server/main.py" \
+        --engine-executable "${cmake_binary_dir:?}/engine" \
+        ##
 }
 
 
 #--- Docker
 
+docker_source_dir=${root:?}
 docker_tag=${project,,}:latest
 docker_name=${project,,}
+docker_build=(
+)
 docker_start=(
     --mount="type=bind,src=${root:?},dst=${root:?},readonly=false"
     --mount="type=bind,src=${HOME:?},dst=${HOME:?},readonly=false"
     --mount="type=bind,src=/etc/passwd,dst=/etc/passwd,readonly=true"
     --mount="type=bind,src=/etc/group,dst=/etc/group,readonly=true"
-    --mount="type=bind,src=/mnt/seenas2/data,dst=/mnt/seenas2/data,readonly=true"
-    --net=host
 )
 docker_exec=(
+)
+docker_service_name=${project,,}
+docker_service_create=(
+    --publish="8080:8080"
 )
 
 go-docker() {
     "${FUNCNAME[0]:?}-$@"
 }
 
+go-docker---dev() {
+    docker_build+=(
+        --target=dev
+    )
+    "${FUNCNAME[0]%%--*}-$@"
+}
+
+go-docker---prod() {
+    docker_build+=(
+        --target=prod
+    )
+    "${FUNCNAME[0]%%--*}-$@"
+}
+
 go-docker-build() {
     pexec docker build \
         --tag "${docker_tag:?}" \
-        - <<'EOF'
-FROM ubuntu:22.04
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y \
-        cmake \
-        gcc \
-        g++ \
-        libx11-dev \
-        libglu1-mesa-dev \
-        xorg-dev \
-        libglfw3-dev \
-        curl \
-        gdb \
-        git \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && \
-    apt-get install -y \
-        software-properties-common \
-    && \
-    add-apt-repository \
-        ppa:deadsnakes/ppa \
-    && \
-    apt-get update && \
-    apt-get install -y \
-        python3.9 \
-        python3-dev \
-        python3-pip \
-        python3-virtualenv \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG STUDIO_VERSION=0.12.1
-WORKDIR /opt/studio-${STUDIO_VERSION:?}
-RUN --mount=type=cache,target=/tmp \
-    curl \
-        --continue-at - \
-        --location \
-        https://github.com/ospray/ospray_studio/releases/download/v${STUDIO_VERSION:?}/ospray_studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
-        --output /tmp/studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
-    && \
-    tar \
-        --extract \
-        --file=/tmp/studio-${STUDIO_VERSION:?}.x86_64.linux.tar.gz \
-        --strip-components=1 \
-        --directory=/opt/studio-${STUDIO_VERSION:?} \
-    && \
-    true
-ENV PATH="/opt/studio-${STUDIO_VERSION:?}/bin${PATH:+:${PATH}}" \
-    CPATH="/opt/studio-${STUDIO_VERSION:?}/include${CPATH:+:${CPATH}}" \
-    LIBRARY_PATH="/opt/studio-${STUDIO_VERSION:?}/lib64${LIBRARY_PATH:+:${LIBRARY_PATH}}" \
-    LD_LIBRARY_PATH="/opt/studio-${STUDIO_VERSION:?}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-    PYTHONPATH="/opt/studio-${STUDIO_VERSION:?}/lib64${PYTHONPATH:+:${PYTHONPATH}}"
-
-EOF
+        "${docker_source_dir:?}" \
+        "${docker_build[@]}" \
+        ##
 }
 
 go-docker-start() {
@@ -146,64 +114,70 @@ go-docker-exec() {
         "$@"
 }
 
-
-#---
-
-ospray_source_dir=${root:?}/external/ospray/scripts/superbuild
-ospray_binary_dir=${ospray_source_dir:?}/build
-ospray_prefix_dir=${ospray_binary_dir:?}/stage
-ospray_configure=(
-    -DCMAKE_BUILD_TYPE:STRING=Debug
-    -DINSTALL_IN_SEPARATE_DIRECTORIES:BOOL=OFF
-)
-ospray_build=(
-)
-ospray_install=(
-)
-
-go-ospray() {
+go-docker-service() {
     "${FUNCNAME[0]:?}-$@"
 }
 
-go-ospray-clean() {
-    pexec rm -rfv -- \
-        "${ospray_binary_dir:?}" \
+go-docker-service-create() {
+    pexec docker service create \
+        --name="${docker_service_name:?}" \
+        "${docker_service_create[@]}" \
+        "${docker_tag:?}" \
         ##
 }
 
-go-ospray-configure() {
-    pexec cmake \
-        -H"${ospray_source_dir:?}" \
-        -B"${ospray_binary_dir:?}" \
-        -DCMAKE_INSTALL_PREFIX:PATH="${ospray_prefix_dir:?}" \
-        "${ospray_configure[@]}" \
+go-docker-service-scale() {
+    pexec docker service scale \
+        "${docker_service_name:?}=${1:?need replicas}" \
+        ##
+}
+
+go-docker-service-stop() {
+    pexec docker service rm \
+        "${docker_service_name:?}" \
+        ##
+}
+
+
+#--- Python
+
+virtualenv_dir=${root:?}/venv
+virtualenv_pip_install=(
+    flask
+)
+
+go-virtualenv() {
+    "${FUNCNAME[0]:?}-${@-create}"
+}
+
+go-virtualenv-create() {
+    pexec python3 -m virtualenv \
+        "${virtualenv_dir:?}" \
+        ##
+}
+
+go-virtualenv-pip() {
+    "${FUNCNAME[0]:?}-${@-install}"
+}
+
+go-virtualenv-pip-install() {
+    pexec "${virtualenv_dir:?}/bin/pip" install \
+        "${virtualenv_pip_install[@]:?}" \
+        ##
+}
+
+go-virtualenv-python() {
+    pexec "${virtualenv_dir:?}/bin/python" \
         "$@" \
         ##
 }
 
-go-ospray-build() {
-    pexec cmake \
-        --build "${ospray_binary_dir:?}" \
-        "${ospray_build[@]}" \
-        "$@" \
-        ##
-}
+go-virtualenv-exec() {
+    source "${virtualenv_dir:?}/bin/activate" \
+    || die "Failed to source: $_"
 
-go-ospray-install() {
-    pexec cmake \
-        --install "${ospray_binary_dir:?}" \
-        "${ospray_install[@]}" \
-        "$@" \
-        ##
-}
-
-go-ospray-exec() {
-    PATH=${ospray_prefix_dir:?}/bin${PATH:+:${PATH:?}} \
-    LD_LIBRARY_PATH=${ospray_prefix_dir:?}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH:?}} \
     pexec "$@"
 }
-
-
 
 
 #---

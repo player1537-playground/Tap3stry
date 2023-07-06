@@ -6,3 +6,7 @@
 	path = external/stb
 	url = https://github.com/nothings/stb.git
 	branch = master
+[submodule "github.io"]
+	path = external/github.io
+	url = https://github.com/seelabutk/tapestry.git
+	branch = gh-pages

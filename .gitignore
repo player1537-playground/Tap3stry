@@ -2,3 +2,5 @@
 /.vscode
 /*.tar.gz
 /*.jpg
+*.png
+*.raw

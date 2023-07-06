@@ -1,0 +1,6 @@
+**/.vscode
+**/build
+**/venv
+**/*.tar.gz
+**/*.raw
+**/.git

@@ -278,7 +278,7 @@ static OSPVolume xNewVolume(const std::string &name) {
     OSPVolume volume;
 
     if (name == "supernova") {
-        static OSPVolume supernova = ({
+        static OSPVolume cache = ({
             OSPVolume volume;
             const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
             OSPDataType dataType = OSP_FLOAT;
@@ -292,7 +292,92 @@ static OSPVolume xNewVolume(const std::string &name) {
             volume;
         });
 
-        volume = supernova;
+        volume = cache;
+
+    } else if (name == "magnetic") {
+        static OSPVolume cache = ({
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/magnetic-512-volume.raw";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 512;
+            uint64_t d2 = 512;
+            uint64_t d3 = 512;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = cache;
+
+    } else if (name == "teapot") {
+        static OSPVolume cache = ({
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/teapot.raw";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 256;
+            uint64_t d2 = 256;
+            uint64_t d3 = 178;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = cache;
+
+    } else if (name == "tornado") {
+        static OSPVolume cache = ({
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/interp8536.nc";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 280;
+            uint64_t d2 = 490;
+            uint64_t d3 = 490;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = cache;
+
+    } else if (name == "turbine") {
+        static OSPVolume cache = ({
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/turbine_VMIN_EPS1.7_minPts40_X1589_Y698_Z1799_Full.raw";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 1589;
+            uint64_t d2 = 698;
+            uint64_t d3 = 1799;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = cache;
+
+    } else if (name == "turbulence") {
+        static OSPVolume cache = ({
+            OSPVolume volume;
+            const char *filename = "/mnt/seenas2/data/standalone/data/tacc-turbulence-256-volume.raw";
+            OSPDataType dataType = OSP_FLOAT;
+            uint64_t d1 = 256;
+            uint64_t d2 = 256;
+            uint64_t d3 = 256;
+            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+
+            ospRetain(volume);
+
+            volume;
+        });
+
+        volume = cache;
     
     } else {
         std::fprintf(stderr, "ERROR: Unknown volume: %s\n", name.c_str());

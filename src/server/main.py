@@ -16,6 +16,7 @@ import subprocess
 import decimal
 import math
 import threading
+import pkgutil
 
 from flask import Flask
 
@@ -207,20 +208,28 @@ def image(options: str):
 
 @app.route('/')
 def index():
-    return Path('index.html').read_text(), { 'Content-Type': 'text/html' }
+    if __name__ == '__main__':
+        html = Path(__file__).parent.joinpath('static', 'index.html').read_text()
+    else:
+        html = pkgutil.get_data(
+            __name__,
+            'static/index.html',
+        )
+    
+    return html, { 'Content-Type': 'text/html' }
 
 
-def main(rendererExecutable):
-    renderer = make_renderer(rendererExecutable)
+def main(engineExecutable: Path, bind: str, port: int, debug: bool):
+    renderer = make_renderer(engineExecutable)
     next(renderer)
 
     global _g_renderer
     _g_renderer = renderer
 
     app.run(
-        host='0.0.0.0',
-        port=8081,
-        debug=True,
+        host=bind,
+        port=port,
+        debug=debug,
     )
 
 
@@ -228,7 +237,15 @@ def cli(args: Optional[List[str]]=None):
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--renderer-executable', dest='rendererExecutable', type=Path, default=Path('osprayAsAService'))
+    parser.add_argument(
+        '--engine-executable',
+        dest='engineExecutable',
+        type=Path,
+        default=Path('tapestryEngine'),
+    )
+    parser.add_argument('--bind', default='0.0.0.0')
+    parser.add_argument('--port', default=8080, type=int)
+    parser.add_argument('--debug', action='store_true')
     args = vars(parser.parse_args(args))
 
     main(**args)
