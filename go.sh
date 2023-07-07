@@ -41,6 +41,14 @@ go-uwsgi() {
         ##
 }
 
+go-github.io() {
+    pexec python3 -m http.server \
+        --bind 0.0.0.0 \
+        --directory "${cmake_source_dir:?}/external/github.io" \
+        8081 \
+        ##
+}
+
 
 #--- Docker
 

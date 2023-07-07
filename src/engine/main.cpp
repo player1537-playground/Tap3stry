@@ -147,6 +147,12 @@ static T xCommit(T& t) {
     return t;
 }
 
+template <class T>
+static T xRetain(T& t) {
+    ospRetain(t);
+    return t;
+}
+
 static OSPData xNewSharedData(const void *sharedData, OSPDataType dataType, uint64_t numItems1, uint64_t numItems2, uint64_t numItems3) {
     OSPData data;
     int64_t byteStride1 = 0;
@@ -158,7 +164,7 @@ static OSPData xNewSharedData(const void *sharedData, OSPDataType dataType, uint
 }
 
 
-static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dataType_, uint64_t d1, uint64_t d2, uint64_t d3) {
+static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, uint64_t d1, uint64_t d2, uint64_t d3) {
     OSPVolume volume;
     const char *type = "structuredRegular";
     volume = ospNewVolume(type);
@@ -177,11 +183,11 @@ static OSPVolume xNewCenteredVolume(const std::string &filename, OSPDataType dat
     });
     ospSetObject(volume, "data", data);
 
-    float gridOrigin[3] = { -0.5f, -0.5f, -0.5f };
+    float gridOrigin[3] = { -0.5f*d1, -0.5f*d2, -0.5f*d3 };
     ospSetParam(volume, "gridOrigin", OSP_VEC3F, gridOrigin);
 
-    float gridSpacing[3] = { 1.0f/d1, 1.0f/d2, 1.0f/d3 };
-    ospSetParam(volume, "gridSpacing", OSP_VEC3F, gridSpacing);
+    // float gridSpacing[3] = { 1.0f/d1, 1.0f/d2, 1.0f/d3 };
+    // ospSetParam(volume, "gridSpacing", OSP_VEC3F, gridSpacing);
 
     // int cellCentered = 0;
     // ospSetParam(volume, "cellCentered", OSP_BOOL, &cellCentered);
@@ -258,6 +264,9 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     color = ({
         OSPData data;
         data = xNewColorMap(colorName);
+        if (data == nullptr) {
+            return nullptr;
+        }
         
         xCommit(data);
     });
@@ -267,6 +276,9 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     opacity = ({
         OSPData data;
         data = xNewOpacityMap(opacityName);
+        if (data == nullptr) {
+            return nullptr;
+        }
         
         xCommit(data);
     });
@@ -275,7 +287,7 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     return transferFunction;
 }
 
-static OSPVolume xNewVolume(const std::string &name) {
+static OSPVolume xGetVolume(const std::string &name) {
     OSPVolume volume;
 
     if (name == "supernova") {
@@ -286,7 +298,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 432;
             uint64_t d2 = 432;
             uint64_t d3 = 432;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -303,7 +315,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 512;
             uint64_t d2 = 512;
             uint64_t d3 = 512;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -320,7 +332,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 256;
             uint64_t d2 = 256;
             uint64_t d3 = 178;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -337,7 +349,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 280;
             uint64_t d2 = 490;
             uint64_t d3 = 490;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -354,7 +366,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 1589;
             uint64_t d2 = 698;
             uint64_t d3 = 1799;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -371,7 +383,7 @@ static OSPVolume xNewVolume(const std::string &name) {
             uint64_t d1 = 256;
             uint64_t d2 = 256;
             uint64_t d3 = 256;
-            volume = xNewCenteredVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(filename, dataType, d1, d2, d3);
 
             ospRetain(volume);
 
@@ -382,11 +394,89 @@ static OSPVolume xNewVolume(const std::string &name) {
     
     } else {
         std::fprintf(stderr, "ERROR: Unknown volume: %s\n", name.c_str());
+        volume = nullptr;
 
     }
 
     return volume;
 }
+
+static OSPGeometry xNewIsosurface(
+    const std::string &volumeName
+) {
+    OSPGeometry isosurface;
+    isosurface = ({
+        OSPGeometry geometry;
+        const char *type = "isosurface";
+        geometry = ospNewGeometry(type);
+    });
+
+    OSPVolume volume;
+    volume = ({
+        OSPVolume volume;
+        volume = xGetVolume(volumeName);
+
+        xCommit(volume);
+    });
+    ospSetObject(isosurface, "volume", volume);
+
+    return isosurface;
+}
+
+static OSPGeometry xGetIsosurface(
+    const std::string &volumeName,
+    const std::vector<float> &isosurfaceValues
+) {
+    using Key = std::tuple<std::string>;
+    static std::map<Key, OSPGeometry> cache;
+    Key key{volumeName};
+
+    if (cache.find(key) == cache.end()) {
+        OSPGeometry isosurface;
+        isosurface = xNewIsosurface(volumeName);
+
+        cache[key] = xRetain(isosurface);
+    }
+
+    OSPGeometry isosurface;
+    isosurface = cache[key];
+
+    OSPData isovalue;
+    isovalue = ({
+        OSPData data;
+        const void *sharedData = isosurfaceValues.data();
+        OSPDataType dataType = OSP_FLOAT;
+        uint64_t numItems1 = isosurfaceValues.size();
+        uint64_t numItems2 = 1;
+        uint64_t numItems3 = 1;
+        data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
+
+        xCommit(data);
+    });
+    ospSetObject(isosurface, "isovalue", isovalue);
+    ospRelease(isovalue);
+
+    return isosurface;
+}
+
+static OSPGeometricModel xNewIsosurfaceModel(
+    const std::string &volumeName,
+    const std::vector<float> &isosurfaceValues
+) {
+    OSPGeometricModel model;
+    model = ospNewGeometricModel(nullptr);
+
+    OSPGeometry geometry = ({
+        OSPGeometry isosurface;
+        isosurface = xGetIsosurface(volumeName, isosurfaceValues);
+
+        xCommit(isosurface);
+    });
+    ospSetObjectAsData(model, "geometry", OSP_GEOMETRY, geometry);
+
+    return model;
+}
+
 
 static OSPVolumetricModel xNewVolumetricModel(
     const std::string &volumeName,
@@ -399,7 +489,10 @@ static OSPVolumetricModel xNewVolumetricModel(
     OSPVolume volume;
     volume = ({
         OSPVolume volume;
-        volume = xNewVolume(volumeName);
+        volume = xGetVolume(volumeName);
+        if (volume == nullptr) {
+            return nullptr;
+        }
 
         xCommit(volume);
     });
@@ -410,6 +503,9 @@ static OSPVolumetricModel xNewVolumetricModel(
     transferFunction = ({
         OSPTransferFunction transferFunction;
         transferFunction = xNewTransferFunction(colorMapName, opacityMapName);
+        if (transferFunction == nullptr) {
+            return nullptr;
+        }
 
         float value[2] = { 0.0f, 0.130518f };
         ospSetParam(transferFunction, "value", OSP_BOX1F, value);
@@ -433,7 +529,8 @@ static void xStatusCallback(void *userData, const char *messageText) {
 static OSPWorld xNewWorld(
     const std::string &volumeName,
     const std::string &colorMapName,
-    const std::string &opacityMapName
+    const std::string &opacityMapName,
+    const std::vector<float> &isosurfaceValues
 ) {
     OSPWorld world;
     world = ospNewWorld();
@@ -448,15 +545,32 @@ static OSPWorld xNewWorld(
             OSPGroup group;
             group = ospNewGroup();
 
-            OSPVolumetricModel volume;
-            volume = ({
-                OSPVolumetricModel model;
-                model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+            if (isosurfaceValues.empty()) {
+                OSPVolumetricModel volume;
+                volume = ({
+                    OSPVolumetricModel model;
+                    model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+                    if (model == nullptr) {
+                        return nullptr;
+                    }
 
-                xCommit(model);
-            });
-            ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
-            ospRelease(volume);
+                    xCommit(model);
+                });
+                ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
+                ospRelease(volume);
+            
+            } else {
+                OSPGeometricModel geometry;
+                geometry = ({
+                    OSPGeometricModel model;
+                    model = xNewIsosurfaceModel(volumeName, isosurfaceValues);
+
+                    xCommit(model);
+                });
+                ospSetObjectAsData(group, "geometry", OSP_GEOMETRIC_MODEL, geometry);
+                ospRelease(geometry);
+
+            }
 
             xCommit(group);
         });
@@ -474,15 +588,20 @@ static OSPWorld xNewWorld(
 static OSPWorld xGetWorld(
     const std::string &volumeName,
     const std::string &colorMapName,
-    const std::string &opacityMapName
+    const std::string &opacityMapName,
+    const std::vector<float> &isosurfaceValues
 ) {
-    using Key = std::tuple<std::string, std::string, std::string>;
+    using Key = std::tuple<std::string, std::string, std::string, bool>;
     static std::map<Key, OSPWorld> cache;
 
-    Key key = std::make_tuple(volumeName, colorMapName, opacityMapName);
+    Key key{volumeName, colorMapName, opacityMapName, isosurfaceValues.empty()};
     if (cache.find(key) == cache.end()) {
         OSPWorld world;
-        world = xNewWorld(volumeName, colorMapName, opacityMapName);
+        world = xNewWorld(volumeName, colorMapName, opacityMapName, isosurfaceValues);
+        if (world == nullptr) {
+            return nullptr;
+        }
+
         ospRetain(world);
         cache[key] = world;
     }
@@ -632,7 +751,14 @@ int main(int argc, const char **argv) {
             auto volumeName = xRead<std::string>();
             auto colorMapName = xRead<std::string>();
             auto opacityMapName = xRead<std::string>();
-            world = xGetWorld(volumeName, colorMapName, opacityMapName);
+            std::vector<float> isosurfaceValues(xRead<size_t>());
+            for (size_t i=0, n=isosurfaceValues.size(); i<n; ++i) {
+                isosurfaceValues[i] = xRead<float>();
+            }
+            world = xGetWorld(volumeName, colorMapName, opacityMapName, isosurfaceValues);
+            if (world == nullptr) {
+                continue;
+            }
 
             xCommit(world);
         });

@@ -47,6 +47,7 @@ class RenderingRequest:
     volumeName: str
     colorMapName: str
     opacityMapName: str
+    isosurfaceValues: List[float]
     cameraPosition: Tuple[float, float, float]
     cameraUp: Tuple[float, float, float]
     cameraDirection: Tuple[float, float, float]
@@ -86,6 +87,11 @@ class RenderingRequest:
         write(f'{self.volumeName}')
         write(f'{self.colorMapName}')
         write(f'{self.opacityMapName}')
+        write(f'{len(self.isosurfaceValues)}')
+        write(' '.join([
+            f'{x}'
+            for x in self.isosurfaceValues
+        ]))
 
         write('camera')
         write(' '.join([
@@ -152,6 +158,12 @@ def make_renderer(executable: Path) -> Renderer:
         executable,
     ], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
+    threading.Thread(
+        target=lambda: \
+            print(f'Process ended: {process.wait() = !r}'),
+        daemon=True,
+    ).start()
+
     response = None
     while True:
         request = yield response
@@ -177,12 +189,20 @@ def image(options: str):
 
     options: str = '/'.join(options)
     options: List[str] = options.split(',')
-    _, *options = options
+    if options[0] == '':
+        options.pop(0)
     options = dict(pairwise(options))
 
     br, bg, bb, ba = map(int, options.get('background', '0/0/0/0').split('/'))
     colormap = options.get('colormap', 'spectralReverse')
     opacitymap = options.get('opacitymap', 'reverseRamp')
+    isovalues = options.get('isosurface', '')
+    isovalues = options.get('isovalues', isovalues)
+    if '/' in isovalues:
+        isovalues = isovalues.split('/')
+    else:
+        isovalues = isovalues.split('-')
+    isovalues = list(map(float, (x for x in isovalues if x != '')))
     tile, ntiles = map(int, options.get('tiling', '0-1').split('-'))
 
     nrows = int(math.sqrt(ntiles))
@@ -207,6 +227,7 @@ def image(options: str):
             volumeName=dataset,
             colorMapName=colormap,
             opacityMapName=opacitymap,
+            isosurfaceValues=isovalues,
             cameraPosition=(px, py, pz),
             cameraUp=(ux, uy, uz),
             cameraDirection=(dx, dy, dz),
@@ -258,6 +279,7 @@ def main(engineExecutable: Path, bind: str, port: int, debug: bool):
         volumeName=None,
         colorMapName='spectralReverse',
         opacityMapName='reverseRamp',
+        isosurfaceValues=[],
         cameraPosition=(quant(1.0), quant(0.0), quant(1.0)),
         cameraUp=(quant(0.0), quant(1.0), quant(0.0)),
         cameraDirection=(quant(-1.0), quant(0.0), quant(-1.0)),
@@ -273,7 +295,7 @@ def main(engineExecutable: Path, bind: str, port: int, debug: bool):
         'magnetic',
         'teapot',
         'tornado',
-        'turbine',
+        # 'turbine',
         'turbulence',
     ]:
         print(f'Loading {name}...', file=sys.stderr, flush=True, end='')
