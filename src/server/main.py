@@ -17,6 +17,7 @@ import decimal
 import math
 import threading
 import pkgutil
+import time
 
 from flask import Flask
 
@@ -116,6 +117,8 @@ class RenderingRequest:
 
 @dataclass(eq=True, frozen=True)
 class RenderingResponse:
+    renderDuration: int
+    encodeDuration: int
     imageLength: int
     imageData: bytes
 
@@ -127,10 +130,14 @@ class RenderingResponse:
             assert len(data) == size
             return struct.unpack(format, data)
         
+        renderDuration ,= read('N')
+        encodeDuration ,= read('N')
         imageLength ,= read('N')
         imageData ,= read(f'{imageLength}s')
 
         return cls(
+            renderDuration=renderDuration,
+            encodeDuration=encodeDuration,
             imageLength=imageLength,
             imageData=imageData,
         )
@@ -186,7 +193,13 @@ def image(options: str):
     row, nrows = map(int, options.get('row', f'{row}/{nrows}').split('/'))
     col, ncols = map(int, options.get('col', f'{col}/{ncols}').split('/'))
 
+    beforeLock = time.time()
+
     with _g_renderer_lock:
+        afterLock = time.time()
+
+        beforeSend = time.time()
+
         response = _g_renderer.send(RenderingRequest(
             imageWidth=resolution,
             imageHeight=resolution,
@@ -203,7 +216,22 @@ def image(options: str):
             backgroundColor=(br, bg, bb, ba),
         ))
 
-    return response.imageData, { 'Content-Type': 'image/jpg' }
+        afterSend = time.time()
+
+    lockDuration = int((afterLock - beforeLock) * 1e6)
+    sendDuration = int((afterSend - beforeSend) * 1e6)
+
+    print(' '.join([
+        f'Render: {response.renderDuration:>6d}',
+        f'Encode: {response.encodeDuration:>6d}',
+        f'Lock: {lockDuration:>6d}',
+        f'Send: {sendDuration:>6d}',
+    ]))
+    return response.imageData, {
+        'Content-Type': 'image/jpg',
+        'Content-Length': response.imageLength,
+        # 'Connection': 'keep-alive',
+    }
 
 
 @app.route('/')
@@ -253,3 +281,7 @@ def cli(args: Optional[List[str]]=None):
 
 if __name__ == '__main__':
     cli()
+
+if __name__ == 'wsgi':
+    _g_renderer = make_renderer(os.environ['ENGINE_EXECUTABLE'])
+    next(_g_renderer)

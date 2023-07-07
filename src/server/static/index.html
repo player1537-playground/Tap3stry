@@ -1,15 +1,23 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 <title>Tap3stry Test Page</title>
+<script src="https://cdn.jsdelivr.net/npm/vega@5.25.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5.12.0/build/vega-lite.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.1"></script>
 <body>
 <p><div id="container"></div>
 <p><button id="button">Stop</button>
+<p><div id="chart"></div>
 <script type="module">
-let resolve, reject;
-button.onclick = onclick;
+const $container = window.container;
+const $button = window.button;
+const $chart = window.chart;
 
-const ROWS = 2;
-const COLS = 2;
+let resolve, reject;
+$button.onclick = onclick;
+
+const ROWS = 4;
+const COLS = 4;
 
 const images = [];
 for (let i=0; i<ROWS; ++i) {
@@ -17,44 +25,74 @@ for (let i=0; i<ROWS; ++i) {
 
     for (let j=0; j<COLS; ++j) {
         const image = new Image();
-
         $row.appendChild(image);
-
         images.push(image);
     }
     
-    container.appendChild($row);
+    $container.appendChild($row);
 }
 
-for (let i=0, n=16;; ++i) {
-    const x = Math.cos(i*Math.PI/n);
-    const y = 0.0;
-    const z = Math.sin(i*Math.PI/n);
 
-    const promises = [];
-    for (let j=0, m=images.length; j<m; ++j) {
-        const image = images[j];
 
-        const promise = new Promise((resolve, reject) => {
-            image.onload = resolve;
-            image.onerror = reject;
-            image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/${256/ROWS|0}/,background,38/36/54/0,tiling,${j}-${m}`;
-        });
-        promises.push(promise);
+for (;;) {
+    await START();
+
+    let allDurations = [];
+    for (let i=0, n=16;; ++i) {
+        const x = Math.cos(i*Math.PI/n);
+        const y = 0.0;
+        const z = Math.sin(i*Math.PI/n);
+
+        const promises = [];
+        for (let j=0, m=images.length; j<m; ++j) {
+            const image = images[j];
+
+            const promise = new Promise((resolve, reject) => {
+                const start = Date.now();
+
+                image.onload = () => {
+                    const end = Date.now();
+                    resolve(end - start);
+                };
+
+                image.onerror = () => {
+                    const end = Date.now();
+                    reject(end - start);
+                };
+
+                image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/${256/ROWS|0}/,background,38/36/54/0,tiling,${j}-${m}`;
+            });
+            promises.push(promise);
+        }
+
+        let timeoutId = null;
+        const durations = await Promise.race([
+            Promise.all(promises),
+            STOP(),
+        ]);
+
+        if (Array.isArray(durations)) {
+            allDurations = allDurations.concat(durations);
+
+            await vegaEmbed($chart, {
+                $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+                datasets: {
+                    durations: allDurations.map((duration, index) => ({
+                        duration,
+                        index,
+                    })),
+                },
+                data: { name: 'durations' },
+                mark: { type: 'line' },
+                encoding: {
+                    x: { field: 'index', type: 'quantitative' },
+                    y: { field: 'duration', type: 'quantitative' },
+                },
+            });
+        }
+
+        clearTimeout(timeoutId);
     }
-
-    let timeoutId = null;
-    await Promise.race([
-        Promise.all(promises),
-        new Promise((res, rej) => {
-            resolve = res;
-            reject = rej;
-
-            timeoutId = setTimeout(ontimeout, 1000);
-        }),
-    ]);
-
-    clearTimeout(timeoutId);
 }
 
 function ontimeout() {
@@ -63,5 +101,37 @@ function ontimeout() {
 
 function onclick() {
     reject();
+}
+
+function START() {
+    let resolve, reject;
+
+    return new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+
+        $button.textContent = 'START';
+        $button.onclick = onclick;
+    });
+
+    function onclick() {
+        resolve();
+    }
+}
+
+function STOP() {
+    let resolve, reject;
+
+    return new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+
+        $button.textContent = 'STOP';
+        $button.onclick = onclick;
+    });
+
+    function onclick() {
+        reject();
+    }
 }
 </script>

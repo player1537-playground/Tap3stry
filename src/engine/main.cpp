@@ -8,6 +8,7 @@
 #include <tuple> // std::make_tuple, std::tie
 #include <iostream> // std::cin
 #include <map> // std::map
+#include <chrono> // std::chrono
 
 //ospray
 #include <ospray/ospray.h>
@@ -470,26 +471,60 @@ static OSPWorld xNewWorld(
     return world;
 }
 
-static OSPFrameBuffer xNewFrameBuffer(int width, int height) {
-    static std::map<std::tuple<int, int>, OSPFrameBuffer> cache;
-    auto key = std::make_tuple(width, height);
+static OSPWorld xGetWorld(
+    const std::string &volumeName,
+    const std::string &colorMapName,
+    const std::string &opacityMapName
+) {
+    using Key = std::tuple<std::string, std::string, std::string>;
+    static std::map<Key, OSPWorld> cache;
 
-    if (cache.find(key) != cache.end()) {
-        return cache[key];
+    Key key = std::make_tuple(volumeName, colorMapName, opacityMapName);
+    if (cache.find(key) == cache.end()) {
+        OSPWorld world;
+        world = xNewWorld(volumeName, colorMapName, opacityMapName);
+        ospRetain(world);
+        cache[key] = world;
     }
 
+    return cache[key];
+}
+
+
+static OSPFrameBuffer xNewFrameBuffer(int width, int height) {
     OSPFrameBuffer frameBuffer;
     OSPFrameBufferFormat format = OSP_FB_RGBA8;
     uint32_t channels = OSP_FB_COLOR;
     frameBuffer = ospNewFrameBuffer(width, height, format, channels);
 
-    ospRetain(frameBuffer);
-    cache[key] = frameBuffer;
-
     return frameBuffer;
 }
 
+static OSPFrameBuffer xGetFrameBuffer(int width, int height) {
+    using Key = std::tuple<int, int>;
+    static std::map<Key, OSPFrameBuffer> cache;
+    Key key = std::make_tuple(width, height);
+
+    if (cache.find(key) == cache.end()) {
+        OSPFrameBuffer frameBuffer;
+        frameBuffer = xNewFrameBuffer(width, height);
+        ospRetain(frameBuffer);
+        cache[key] = frameBuffer;
+    }
+
+    return cache[key];
+}
+
 static OSPCamera xNewCamera(
+    const std::string &type
+) {
+    OSPCamera camera;
+    camera = ospNewCamera(type.c_str());
+
+    return camera;
+}
+
+static OSPCamera xGetCamera(
     const std::string &type,
     float position[3],
     float up[3],
@@ -503,7 +538,7 @@ static OSPCamera xNewCamera(
     Key key = std::make_tuple(type);
     if (cache.find(key) == cache.end()) {
         OSPCamera camera;
-        camera = ospNewCamera(type.c_str());
+        camera = xNewCamera(type);
 
         ospRetain(camera);
         cache[key] = camera;
@@ -512,42 +547,34 @@ static OSPCamera xNewCamera(
     OSPCamera camera;
     camera = cache[key];
 
-    float fovy[1] = { 90.0f };
-    ospSetParam(camera, "fovy", OSP_FLOAT, fovy);
-
     ospSetParam(camera, "position", OSP_VEC3F, position);
-
     ospSetParam(camera, "up", OSP_VEC3F, up);
-
     ospSetParam(camera, "direction", OSP_VEC3F, direction);
-
-    // float imageStart[2] = {
-    //     xRead<float>(),  // left
-    //     xRead<float>(),  // bottom
-    //     // (regionCol + 0.0f) / regionColCount,  // left
-    //     // 1.0f - (regionRow + 0.0f) / regionRowCount,  // bottom
-    // };
     ospSetParam(camera, "imageStart", OSP_VEC2F, imageStart);
-
-    // float imageEnd[2] = {
-    //     xRead<float>(),  // right
-    //     xRead<float>(),  // top
-    //     // (regionCol + 1.0f) / regionColCount,  // right
-    //     // 1.0f - (regionRow + 1.0f) / regionRowCount,  // top
-    // };
     ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
-    
+
     return camera;
+
 }
 
-static OSPRenderer xNewRenderer(const std::string &type, float backgroundColor[4]) {
+static OSPRenderer xNewRenderer(const std::string &type) {
+    OSPRenderer renderer;
+    renderer = ospNewRenderer(type.c_str());
+
+    return renderer;
+}
+
+static OSPRenderer xGetRenderer(
+    const std::string &type,
+    float backgroundColor[4]
+) {
     using Key = std::tuple<std::string>;
     static std::map<Key, OSPRenderer> cache;
 
     Key key = std::make_tuple(type);
     if (cache.find(key) == cache.end()) {
         OSPRenderer renderer;
-        renderer = ospNewRenderer(type.c_str());
+        renderer = xNewRenderer(type);
 
         ospRetain(renderer);
         cache[key] = renderer;
@@ -605,7 +632,7 @@ int main(int argc, const char **argv) {
             auto volumeName = xRead<std::string>();
             auto colorMapName = xRead<std::string>();
             auto opacityMapName = xRead<std::string>();
-            world = xNewWorld(volumeName, colorMapName, opacityMapName);
+            world = xGetWorld(volumeName, colorMapName, opacityMapName);
 
             xCommit(world);
         });
@@ -639,7 +666,7 @@ int main(int argc, const char **argv) {
                 xRead<float>(),  // right
                 xRead<float>(),  // top
             };
-            camera = xNewCamera(type, position, up, direction, imageStart, imageEnd);
+            camera = xGetCamera(type, position, up, direction, imageStart, imageEnd);
 
             xCommit(camera);
         });
@@ -656,7 +683,7 @@ int main(int argc, const char **argv) {
                 xRead<int>() / 255.0f,
                 xRead<int>() / 255.0f,
             };
-            renderer = xNewRenderer(type, backgroundColor);
+            renderer = xGetRenderer(type, backgroundColor);
 
             xCommit(renderer);
         });
@@ -669,12 +696,18 @@ int main(int argc, const char **argv) {
             OSPFrameBuffer frameBuffer;
             auto width = xRead<int>();
             auto height = xRead<int>();
-            frameBuffer = xNewFrameBuffer(width, height);
+            frameBuffer = xGetFrameBuffer(width, height);
 
             std::make_tuple(xCommit(frameBuffer), width, height);
         });
 
+        using Clock = std::chrono::steady_clock;
+
+        Clock::time_point beforeRender = Clock::now();
         ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
+        Clock::time_point afterRender = Clock::now();
+
+        Clock::time_point beforeEncode = Clock::now();
 
         size_t imageLength;
         void *imageData;
@@ -699,6 +732,14 @@ int main(int argc, const char **argv) {
             std::make_tuple(length, data);
         });
 
+        Clock::time_point afterEncode = Clock::now();
+
+        using TimeUnit = std::chrono::microseconds;
+        size_t renderDuration = std::chrono::duration_cast<TimeUnit>(afterRender - beforeRender).count();
+        size_t encodeDuration = std::chrono::duration_cast<TimeUnit>(afterEncode - beforeEncode).count();
+
+        std::cout.write(reinterpret_cast<const char *>(&renderDuration), sizeof(renderDuration));
+        std::cout.write(reinterpret_cast<const char *>(&encodeDuration), sizeof(encodeDuration));
         std::cout.write(reinterpret_cast<const char *>(&imageLength), sizeof(imageLength));
         std::cout.write(static_cast<const char *>(imageData), imageLength);
         std::cout.flush();

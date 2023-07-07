@@ -30,6 +30,17 @@ go-server() {
         ##
 }
 
+go-uwsgi() {
+    pexec uwsgi \
+        --enable-threads \
+        --http :8080 \
+        --http-keepalive=1 \
+        --pymodule-alias wsgi="${cmake_source_dir:?}/src/server/main.py" \
+        --module wsgi:app \
+        --env ENGINE_EXECUTABLE="${cmake_binary_dir:?}/engine" \
+        ##
+}
+
 
 #--- Docker
 
@@ -121,6 +132,7 @@ go-docker-service() {
 go-docker-service-create() {
     pexec docker service create \
         --name="${docker_service_name:?}" \
+        ${1:+--replicas="${1:?}"} \
         "${docker_service_create[@]}" \
         "${docker_tag:?}" \
         ##
@@ -142,9 +154,6 @@ go-docker-service-stop() {
 #--- Python
 
 virtualenv_dir=${root:?}/venv
-virtualenv_pip_install=(
-    flask
-)
 
 go-virtualenv() {
     "${FUNCNAME[0]:?}-${@-create}"
@@ -162,7 +171,7 @@ go-virtualenv-pip() {
 
 go-virtualenv-pip-install() {
     pexec "${virtualenv_dir:?}/bin/pip" install \
-        "${virtualenv_pip_install[@]:?}" \
+        -r "${root:?}/requirements.txt" \
         ##
 }
 
