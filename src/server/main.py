@@ -3,6 +3,7 @@
 """
 
 from __future__ import annotations
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 import sys
@@ -250,6 +251,42 @@ def index():
 def main(engineExecutable: Path, bind: str, port: int, debug: bool):
     renderer = make_renderer(engineExecutable)
     next(renderer)
+
+    request = RenderingRequest(
+        imageWidth=256,
+        imageHeight=256,
+        volumeName=None,
+        colorMapName='spectralReverse',
+        opacityMapName='reverseRamp',
+        cameraPosition=(quant(1.0), quant(0.0), quant(1.0)),
+        cameraUp=(quant(0.0), quant(1.0), quant(0.0)),
+        cameraDirection=(quant(-1.0), quant(0.0), quant(-1.0)),
+        cameraRowIndex=0,
+        cameraRowCount=1,
+        cameraColIndex=0,
+        cameraColCount=1,
+        backgroundColor=(0, 0, 0, 0),
+    )
+
+    for name in [
+        'supernova',
+        'magnetic',
+        'teapot',
+        'tornado',
+        'turbine',
+        'turbulence',
+    ]:
+        print(f'Loading {name}...', file=sys.stderr, flush=True, end='')
+        start = time.time()
+        
+        renderer.send(dataclasses.replace(
+            request,
+            volumeName=name,
+        ))
+
+        duration = time.time() - start
+
+        print(f' Done {duration:>,.3f}s')
 
     global _g_renderer
     _g_renderer = renderer
