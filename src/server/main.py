@@ -40,6 +40,11 @@ quant = decimal.Context(
 ).create_decimal
 
 
+_g_extra_fileobj = open('tmp/engine.stdin.txt', 'wb')
+import atexit
+atexit.register(_g_extra_fileobj.close)
+
+
 @dataclass(eq=True, frozen=True)
 class RenderingRequest:
     imageWidth: int
@@ -76,6 +81,7 @@ class RenderingRequest:
             s = s + '\n'
             s = s.encode('utf-8')
             fileobj.write(s)
+            _g_extra_fileobj.write(s)
 
         write('renderer')
         write(' '.join([
@@ -88,10 +94,8 @@ class RenderingRequest:
         write(f'{self.colorMapName}')
         write(f'{self.opacityMapName}')
         write(f'{len(self.isosurfaceValues)}')
-        write(' '.join([
-            f'{x}'
-            for x in self.isosurfaceValues
-        ]))
+        for x in self.isosurfaceValues:
+            write(f'{x}')
 
         write('camera')
         write(' '.join([

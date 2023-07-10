@@ -18,8 +18,17 @@ go---virtualenv() {
     exec "${self:?}" "$@"
 }
 
+go-gdb-engine() {
+    pexec gdb \
+        -ex="r > /dev/null < ${root:?}/tmp/engine.stdin.txt" \
+        --args \
+            "${cmake_binary_dir:?}/engine" \
+            "$@" \
+            ##
+}
+
 go-engine() {
-    pexec "${cmake_binary_dir:?}/tapestryEngine" \
+    pexec gdb -ex=r --args "${cmake_binary_dir:?}/engine" \
         "$@" \
         ##
 }

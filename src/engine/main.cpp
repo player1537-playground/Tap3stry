@@ -200,12 +200,6 @@ static std::map<std::string, std::vector<std::tuple<float, float, float>>> color
 };
 
 static OSPData xNewColorMap(const std::string &name) {
-    static std::map<std::string, OSPData> loadedMaps;
-
-    if (loadedMaps.find(name) != loadedMaps.end()) {
-        return loadedMaps[name];
-    }
-
     if (!(colorMaps.find(name) != colorMaps.end())) {
         std::fprintf(stderr, "ERROR: Colormap not found: %s\n", name.c_str());
         return nullptr;
@@ -219,10 +213,22 @@ static OSPData xNewColorMap(const std::string &name) {
     uint64_t numItems3 = 1;
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
 
-    ospRetain(data);
-    loadedMaps[name] = data;
-
     return data;
+}
+
+static OSPData xGetColorMap(const std::string &name) {
+    using Key = std::tuple<std::string>;
+    static std::map<Key, OSPData> cache;
+
+    Key key{name};
+    if (cache.find(key) == cache.end()) {
+        OSPData data;
+        data = xNewColorMap(name);
+
+        cache[key] = xRetain(data);
+    }
+
+    return cache[key];
 }
 
 static std::map<std::string, std::vector<float>> opacityMaps{
@@ -230,12 +236,6 @@ static std::map<std::string, std::vector<float>> opacityMaps{
 };
 
 static OSPData xNewOpacityMap(const std::string &name) {
-    static std::map<std::string, OSPData> loadedMaps;
-
-    if (loadedMaps.find(name) != loadedMaps.end()) {
-        return loadedMaps[name];
-    }
-
     if (!(opacityMaps.find(name) != opacityMaps.end())) {
         std::fprintf(stderr, "ERROR: Opacity map not found: %s\n", name.c_str());
         return nullptr;
@@ -248,14 +248,29 @@ static OSPData xNewOpacityMap(const std::string &name) {
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
-    ospRetain(data);
-
-    loadedMaps[name] = data;
 
     return data;
 }
 
-static OSPTransferFunction xNewTransferFunction(const std::string &colorName, const std::string &opacityName) {
+static OSPData xGetOpacityMap(const std::string &name) {
+    using Key = std::tuple<std::string>;
+    static std::map<Key, OSPData> cache;
+
+    Key key{name};
+    if (cache.find(key) == cache.end()) {
+        OSPData data;
+        data = xNewOpacityMap(name);
+
+        cache[key] = xRetain(data);
+    }
+
+    return cache[key];
+}
+
+static OSPTransferFunction xNewTransferFunction(
+    const std::string &colorName,
+    const std::string &opacityName
+) {
     OSPTransferFunction transferFunction;
     const char *type = "piecewiseLinear";
     transferFunction = ospNewTransferFunction(type);
@@ -263,7 +278,7 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     OSPData color;
     color = ({
         OSPData data;
-        data = xNewColorMap(colorName);
+        data = xGetColorMap(colorName);
         if (data == nullptr) {
             return nullptr;
         }
@@ -275,7 +290,7 @@ static OSPTransferFunction xNewTransferFunction(const std::string &colorName, co
     OSPData opacity;
     opacity = ({
         OSPData data;
-        data = xNewOpacityMap(opacityName);
+        data = xGetOpacityMap(opacityName);
         if (data == nullptr) {
             return nullptr;
         }
@@ -300,9 +315,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 432;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -317,9 +330,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 512;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -334,9 +345,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 178;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -351,9 +360,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 490;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -368,9 +375,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 1799;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -385,9 +390,7 @@ static OSPVolume xGetVolume(const std::string &name) {
             uint64_t d3 = 256;
             volume = xNewVolume(filename, dataType, d1, d2, d3);
 
-            ospRetain(volume);
-
-            volume;
+            xRetain(volume);
         });
 
         volume = cache;
@@ -565,6 +568,17 @@ static OSPWorld xNewWorld(
                     OSPGeometricModel model;
                     model = xNewIsosurfaceModel(volumeName, isosurfaceValues);
 
+                    OSPMaterial material;
+                    material = ({
+                        OSPMaterial material;
+                        const char *dummy = nullptr;
+                        const char *type = "obj";
+                        material = ospNewMaterial(dummy, type);
+
+                        xCommit(material);
+                    });
+                    ospSetObject(model, "material", material);
+
                     xCommit(model);
                 });
                 ospSetObjectAsData(group, "geometry", OSP_GEOMETRIC_MODEL, geometry);
@@ -602,8 +616,7 @@ static OSPWorld xGetWorld(
             return nullptr;
         }
 
-        ospRetain(world);
-        cache[key] = world;
+        cache[key] = xRetain(world);
     }
 
     return cache[key];
@@ -754,6 +767,7 @@ int main(int argc, const char **argv) {
             std::vector<float> isosurfaceValues(xRead<size_t>());
             for (size_t i=0, n=isosurfaceValues.size(); i<n; ++i) {
                 isosurfaceValues[i] = xRead<float>();
+                std::fprintf(stderr, "isosurfaceValues[%zu] = %f\n", i, isosurfaceValues[i]);
             }
             world = xGetWorld(volumeName, colorMapName, opacityMapName, isosurfaceValues);
             if (world == nullptr) {

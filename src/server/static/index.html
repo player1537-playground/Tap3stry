@@ -47,9 +47,9 @@ for (;;) {
 
     let allDurations = [];
     for (let i=0, n=16;; ++i) {
-        const x = Math.cos(i*Math.PI/n);
+        const x = 256 * Math.cos(i*Math.PI/n);
         const y = 0.0;
-        const z = Math.sin(i*Math.PI/n);
+        const z = 256 * Math.sin(i*Math.PI/n);
 
         const promises = [];
         for (let j=0, m=images.length; j<m; ++j) {
@@ -68,7 +68,7 @@ for (;;) {
                     reject(end - start);
                 };
 
-                image.src = `/image/supernova/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/${256/ROWS|0}/,background,38/36/54/0,tiling,${j}-${m}`;
+                image.src = `/image/teapot/${x}/${y}/${z}/0.0/1.0/0.0/${-x}/${-y}/${-z}/${256/ROWS|0}/,background,38/36/54/0,tiling,${j}-${m},isosurface,10-30-50-80-100`;
             });
             promises.push(promise);
         }
