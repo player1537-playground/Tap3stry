@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS dev
+FROM ubuntu:22.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
@@ -17,6 +17,91 @@ RUN apt-get update && \
         python3-pip \
         python3-virtualenv \
     && rm -rf /var/lib/apt/lists/*
+
+
+FROM base AS dev
+
+WORKDIR /opt/src/renderkit
+COPY external/ospray/scripts/superbuild .
+RUN <<'EOF'
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+renderkit_source_dir=/opt/src/renderkit
+renderkit_binary_dir=/opt/var/renderkit
+renderkit_prefix_dir=/opt/renderkit
+
+# rm -rfv -- \
+#     "${renderkit_binary_dir:?}/CMakeCache.txt" \
+#     "${renderkit_binary_dir:?}/CMakeFiles" \
+#     ##
+
+cmake \
+    -LA \
+    -H"${renderkit_source_dir:?}" \
+    -B"${renderkit_binary_dir:?}" \
+    -DCMAKE_INSTALL_PREFIX:PATH="${renderkit_prefix_dir:?}" \
+    -DCMAKE_BUILD_TYPE:STRING=Debug \
+    -DINSTALL_IN_SEPARATE_DIRECTORIES:BOOL=OFF \
+    -DBUILD_DEPENDENCIES_ONLY:BOOL=ON \
+    ##
+
+cmake \
+    --build "${renderkit_binary_dir:?}" \
+    ##
+
+# cmake \
+#     --install "${renderkit_binary_dir:?}" \
+#     ##
+
+ls -lah /opt/renderkit/*
+
+EOF
+ENV PATH="/opt/renderkit/bin${PATH:+:${PATH}}" \
+    CPATH="/opt/renderkit/include${CPATH:+:${CPATH}}" \
+    LIBRARY_PATH="/opt/renderkit/lib:/opt/renderkit/lib/intel64/gcc4.8${LIBRARY_PATH:+:${LIBRARY_PATH}}" \
+    LD_LIBRARY_PATH="/opt/renderkit/lib:/opt/renderkit/lib/intel64/gcc4.8${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+
+WORKDIR /opt/src/ospray
+COPY external/ospray .
+RUN <<'EOF'
+#!/usr/bin/env bash
+set -euxo pipefail
+
+ospray_source_dir=/opt/src/ospray
+ospray_binary_dir=/opt/var/ospray
+ospray_prefix_dir=/opt/ospray
+
+cmake \
+    -LA \
+    -H"${ospray_source_dir:?}" \
+    -B"${ospray_binary_dir:?}" \
+    -DCMAKE_INSTALL_PREFIX:PATH="${ospray_prefix_dir:?}" \
+    -DCMAKE_BUILD_TYPE:STRING=Debug \
+    ##
+
+cmake \
+    --build "${ospray_binary_dir:?}" \
+    --parallel \
+    ##
+
+cmake \
+    --install "${ospray_binary_dir:?}" \
+    ##
+
+ls -lah /opt/ospray/*
+
+EOF
+ENV PATH="/opt/ospray/bin${PATH:+:${PATH}}" \
+    CPATH="/opt/ospray/include${CPATH:+:${CPATH}}" \
+    LIBRARY_PATH="/opt/ospray/lib${LIBRARY_PATH:+:${LIBRARY_PATH}}" \
+    LD_LIBRARY_PATH="/opt/ospray/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+
+
+FROM base AS prod
 
 
 ARG OSPRAY_VERSION=2.12.0
@@ -41,7 +126,6 @@ ENV PATH="/opt/ospray-${OSPRAY_VERSION:?}/bin${PATH:+:${PATH}}" \
     LD_LIBRARY_PATH="/opt/ospray-${OSPRAY_VERSION:?}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 
-FROM dev AS prod
 WORKDIR /opt/src/tapestry
 COPY . .
 RUN <<'EOF'

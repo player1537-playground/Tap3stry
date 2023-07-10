@@ -2,7 +2,7 @@
 # vim :set ts=4 sw=4 sts=4 et:
 die() { printf $'Error: %s\n' "$*" >&2; exit 1; }
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
-self=${BASH_SOURCE[0]:?}
+self=$(realpath "${BASH_SOURCE[0]:?}")
 project=${root##*/}
 pexec() { >&2 printf exec; >&2 printf ' %q' "$@"; >&2 printf '\n'; exec "$@"; }
 #---
@@ -28,7 +28,7 @@ go-gdb-engine() {
 }
 
 go-engine() {
-    pexec gdb -ex=r --args "${cmake_binary_dir:?}/engine" \
+    pexec "${cmake_binary_dir:?}/engine" \
         "$@" \
         ##
 }
@@ -65,6 +65,7 @@ docker_source_dir=${root:?}
 docker_tag=${project,,}:latest
 docker_name=${project,,}
 docker_build=(
+    --progress=plain
 )
 docker_start=(
     --mount="type=bind,src=${root:?},dst=${root:?},readonly=false"

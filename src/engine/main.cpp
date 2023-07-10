@@ -475,7 +475,7 @@ static OSPGeometricModel xNewIsosurfaceModel(
 
         xCommit(isosurface);
     });
-    ospSetObjectAsData(model, "geometry", OSP_GEOMETRY, geometry);
+    ospSetObject(model, "geometry", geometry);
 
     return model;
 }
