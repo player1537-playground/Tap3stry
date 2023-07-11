@@ -15,6 +15,7 @@ target_link_libraries(engine
         ospray::ospray
 )
 target_include_directories(engine
+    SYSTEM
     PRIVATE
         external/stb
 )

@@ -26,6 +26,7 @@ from flask import Flask
 app = Flask(__name__)
 _g_renderer: Renderer
 _g_renderer_lock: threading.Lock = threading.Lock()
+_g_extra_fileobj: FileLike = None
 
 
 def pairwise(it: Iterable[Any]) -> Iterator[Tuple[Any, Any]]:
@@ -40,16 +41,12 @@ quant = decimal.Context(
 ).create_decimal
 
 
-_g_extra_fileobj = open('tmp/engine.stdin.txt', 'wb')
-import atexit
-atexit.register(_g_extra_fileobj.close)
-
-
 @dataclass(eq=True, frozen=True)
 class RenderingRequest:
     imageWidth: int
     imageHeight: int
     volumeName: str
+    volumeTimestep: int
     colorMapName: str
     opacityMapName: str
     isosurfaceValues: List[float]
@@ -81,7 +78,9 @@ class RenderingRequest:
             s = s + '\n'
             s = s.encode('utf-8')
             fileobj.write(s)
-            _g_extra_fileobj.write(s)
+
+            if _g_extra_fileobj is not None:
+                _g_extra_fileobj.write(s)
 
         write('renderer')
         write(' '.join([
@@ -91,6 +90,7 @@ class RenderingRequest:
 
         write('world')
         write(f'{self.volumeName}')
+        write(f'{self.volumeTimestep}')
         write(f'{self.colorMapName}')
         write(f'{self.opacityMapName}')
         write(f'{len(self.isosurfaceValues)}')
@@ -137,6 +137,7 @@ class RenderingResponse:
     def read(cls, fileobj: BinaryIO) -> Self:
         def read(format: str) -> Tuple[Any, ...]:
             size = struct.calcsize(format)
+            # print(f'{format = !r} {size = !r}')
             data = fileobj.read(size)
             assert len(data) == size
             return struct.unpack(format, data)
@@ -199,7 +200,8 @@ def image(options: str):
 
     br, bg, bb, ba = map(int, options.get('background', '0/0/0/0').split('/'))
     colormap = options.get('colormap', 'spectralReverse')
-    opacitymap = options.get('opacitymap', 'reverseRamp')
+    opacitymap = options.get('opacitymap', 'ramp')
+    timestep = int(options.get('timestep', '0'))
     isovalues = options.get('isosurface', '')
     isovalues = options.get('isovalues', isovalues)
     if '/' in isovalues:
@@ -229,6 +231,7 @@ def image(options: str):
             imageWidth=resolution,
             imageHeight=resolution,
             volumeName=dataset,
+            volumeTimestep=timestep,
             colorMapName=colormap,
             opacityMapName=opacitymap,
             isosurfaceValues=isovalues,
@@ -254,7 +257,7 @@ def image(options: str):
         f'Send: {sendDuration:>6d}',
     ]))
     return response.imageData, {
-        'Content-Type': 'image/jpg',
+        'Content-Type': 'image/png',
         'Content-Length': response.imageLength,
         # 'Connection': 'keep-alive',
     }
@@ -273,7 +276,12 @@ def index():
     return html, { 'Content-Type': 'text/html' }
 
 
-def main(engineExecutable: Path, bind: str, port: int, debug: bool):
+def main(engineExecutable: Path, bind: str, port: int, debug: bool, logEngineInput: bool):
+    global _g_extra_fileobj
+    if logEngineInput:
+        _g_extra_fileobj = open('tmp/engine.stdin.txt', 'wb')
+        import atexit; atexit.register(_g_extra_fileobj.close)
+
     renderer = make_renderer(engineExecutable)
     next(renderer)
 
@@ -281,6 +289,7 @@ def main(engineExecutable: Path, bind: str, port: int, debug: bool):
         imageWidth=256,
         imageHeight=256,
         volumeName=None,
+        volumeTimestep=None,
         colorMapName='spectralReverse',
         opacityMapName='reverseRamp',
         isosurfaceValues=[],
@@ -294,20 +303,24 @@ def main(engineExecutable: Path, bind: str, port: int, debug: bool):
         backgroundColor=(0, 0, 0, 0),
     )
 
-    for name in [
-        'supernova',
-        'magnetic',
-        'teapot',
-        'tornado',
-        # 'turbine',
-        'turbulence',
+    for name, timestep in [
+        # ('supernova', 0),
+        # ('magnetic', 0),
+        # ('teapot', 0),
+        # ('tornado', 0),
+        # ('turbine', 0),
+        # ('turbulence', 0),
+    # ] + [
+    #     ('jet', timestep)
+    #     for timestep in range(19)
     ]:
-        print(f'Loading {name}...', file=sys.stderr, flush=True, end='')
+        print(f'Loading {name} ({timestep})...', file=sys.stderr, flush=True, end='')
         start = time.time()
         
         renderer.send(dataclasses.replace(
             request,
             volumeName=name,
+            volumeTimestep=timestep,
         ))
 
         duration = time.time() - start
@@ -337,6 +350,7 @@ def cli(args: Optional[List[str]]=None):
     parser.add_argument('--bind', default='0.0.0.0')
     parser.add_argument('--port', default=8080, type=int)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--log-engine-input', dest='logEngineInput', action='store_true')
     args = vars(parser.parse_args(args))
 
     main(**args)

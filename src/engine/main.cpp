@@ -50,7 +50,7 @@ static void stbiCallback(void *context_, void *data, int size) {
     context->offset += size;
 }
 
-static size_t xToJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
+static size_t __attribute__((unused)) xToJPG(const void *rgba, int width, int height, size_t *outsize, void **outdata) {
     if (*outsize == 0) {
         *outsize = 1024;
         *outdata = std::malloc(*outsize);
@@ -100,7 +100,7 @@ static size_t xToPNG(const void *rgba, int width, int height, size_t *outsize, v
     return context.offset;
 }
 
-static void xWriteBytes(const std::string &filename, size_t size, void *data) {
+static void __attribute__((unused)) xWriteBytes(const std::string &filename, size_t size, void *data) {
     std::FILE *file;
     file = fopen(filename.c_str(), "wb");
     if (!file) xDie("Failed to fopen: %s", filename.c_str());
@@ -132,9 +132,14 @@ static void *xReadBytes(const std::string &filename) {
     }
 
     void *data;
-    data = new std::byte[nbyte];
-    std::size_t nread = std::fread(data, sizeof(std::byte), nbyte, file);
-    if (nread < nbyte) xDie("Failed to read everything: %zu < %zu", nread, nbyte);
+    data = new uint8_t[nbyte];
+    for (size_t i=0, n=nbyte; i<n; ++i) {
+        static_cast<uint8_t *>(data)[i] = 0x33;
+    }
+    std::size_t nread = std::fread(data, 1, nbyte, file);
+    if (static_cast<std::size_t>(nread) < static_cast<std::size_t>(nbyte)) {
+        xDie("Failed to read everything: %zu < %zu", nread, nbyte);
+    }
 
     std::fclose(file);
 
@@ -158,13 +163,40 @@ static OSPData xNewSharedData(const void *sharedData, OSPDataType dataType, uint
     int64_t byteStride1 = 0;
     int64_t byteStride2 = 0;
     int64_t byteStride3 = 0;
+    std::fprintf(stderr, "ospNewSharedData: %p, %d, %lu, %ld, %lu, %ld, %lu, %ld)\n",
+        sharedData, dataType, numItems1, byteStride1, numItems2, byteStride2, numItems3, byteStride3);
     data = ospNewSharedData(sharedData, dataType, numItems1, byteStride1, numItems2, byteStride2, numItems3, byteStride3);
 
     return xCommit(data);
 }
 
+static std::map<
+    std::tuple<std::string, int>,
+    std::tuple<
+        std::string,
+        std::tuple<int, int, int>,
+        std::tuple<float, float>
+    >
+> volumes = {
+#   include "detail/volumes.h"
+};
 
-static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, uint64_t d1, uint64_t d2, uint64_t d3) {
+static OSPVolume xNewVolume(const std::string &name, int timestep) {
+    using Key = std::tuple<std::string, int>;
+
+    Key key{name, timestep};
+    if (volumes.find(key) == volumes.end()) {
+        std::fprintf(stderr, "ERROR: Unknown volume! %s, %d\n", name.c_str(), timestep);
+        return nullptr;
+    }
+
+    std::string filename;
+    std::tuple<float, float, float> dimensions;
+    std::tie(filename, dimensions, std::ignore) = volumes[key];
+    
+    int d1, d2, d3;
+    std::tie(d1, d2, d3) = dimensions;
+
     OSPVolume volume;
     const char *type = "structuredRegular";
     volume = ospNewVolume(type);
@@ -173,7 +205,13 @@ static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, 
     data = ({
         OSPData data;
         const void *sharedData = xReadBytes(filename);
-        OSPDataType dataType = dataType_;
+        std::fprintf(stderr, "volume: %f %f %f %f\n"
+        , static_cast<const float *>(sharedData)[0]
+        , static_cast<const float *>(sharedData)[1]
+        , static_cast<const float *>(sharedData)[2]
+        , static_cast<const float *>(sharedData)[3]);
+
+        OSPDataType dataType = OSP_FLOAT;
         uint64_t numItems1 = d1;
         uint64_t numItems2 = d2;
         uint64_t numItems3 = d3;
@@ -186,6 +224,9 @@ static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, 
     float gridOrigin[3] = { -0.5f*d1, -0.5f*d2, -0.5f*d3 };
     ospSetParam(volume, "gridOrigin", OSP_VEC3F, gridOrigin);
 
+    float densityScale[] = { 0.1 };
+    ospSetParam(volume, "densityScale", OSP_FLOAT, densityScale);
+
     // float gridSpacing[3] = { 1.0f/d1, 1.0f/d2, 1.0f/d3 };
     // ospSetParam(volume, "gridSpacing", OSP_VEC3F, gridSpacing);
 
@@ -195,12 +236,12 @@ static OSPVolume xNewVolume(const std::string &filename, OSPDataType dataType_, 
     return volume;
 }
 
-static std::map<std::string, std::vector<std::tuple<float, float, float>>> colorMaps{
+static std::map<std::string, std::vector<float>> colorMaps{
 #   include "detail/colormaps.h"
 };
 
 static OSPData xNewColorMap(const std::string &name) {
-    if (!(colorMaps.find(name) != colorMaps.end())) {
+    if (colorMaps.find(name) == colorMaps.end()) {
         std::fprintf(stderr, "ERROR: Colormap not found: %s\n", name.c_str());
         return nullptr;
     }
@@ -208,7 +249,7 @@ static OSPData xNewColorMap(const std::string &name) {
     OSPData data;
     const void *sharedData = colorMaps[name].data();
     OSPDataType dataType = OSP_VEC3F;
-    uint64_t numItems1 = colorMaps[name].size();
+    uint64_t numItems1 = colorMaps[name].size() / 3;
     uint64_t numItems2 = 1;
     uint64_t numItems3 = 1;
     data = xNewSharedData(sharedData, dataType, numItems1, numItems2, numItems3);
@@ -224,6 +265,9 @@ static OSPData xGetColorMap(const std::string &name) {
     if (cache.find(key) == cache.end()) {
         OSPData data;
         data = xNewColorMap(name);
+        if (data == nullptr) {
+            return nullptr;
+        }
 
         cache[key] = xRetain(data);
     }
@@ -236,7 +280,7 @@ static std::map<std::string, std::vector<float>> opacityMaps{
 };
 
 static OSPData xNewOpacityMap(const std::string &name) {
-    if (!(opacityMaps.find(name) != opacityMaps.end())) {
+    if (opacityMaps.find(name) == opacityMaps.end()) {
         std::fprintf(stderr, "ERROR: Opacity map not found: %s\n", name.c_str());
         return nullptr;
     }
@@ -260,6 +304,9 @@ static OSPData xGetOpacityMap(const std::string &name) {
     if (cache.find(key) == cache.end()) {
         OSPData data;
         data = xNewOpacityMap(name);
+        if (data == nullptr) {
+            return nullptr;
+        }
 
         cache[key] = xRetain(data);
     }
@@ -302,110 +349,26 @@ static OSPTransferFunction xNewTransferFunction(
     return transferFunction;
 }
 
-static OSPVolume xGetVolume(const std::string &name) {
-    OSPVolume volume;
+static OSPVolume xGetVolume(const std::string &name, int timestep) {
+    using Key = std::tuple<std::string, int>;
+    static std::map<Key, OSPVolume> cache;
 
-    if (name == "supernova") {
-        static OSPVolume cache = ({
+    Key key{name, timestep};
+    if (cache.find(key) == cache.end()) {
+        cache[key] = ({
             OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/E_1335.dat";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 432;
-            uint64_t d2 = 432;
-            uint64_t d3 = 432;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
+            volume = xNewVolume(name, timestep);
 
             xRetain(volume);
         });
-
-        volume = cache;
-
-    } else if (name == "magnetic") {
-        static OSPVolume cache = ({
-            OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/magnetic-512-volume.raw";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 512;
-            uint64_t d2 = 512;
-            uint64_t d3 = 512;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-            xRetain(volume);
-        });
-
-        volume = cache;
-
-    } else if (name == "teapot") {
-        static OSPVolume cache = ({
-            OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/teapot.raw";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 256;
-            uint64_t d2 = 256;
-            uint64_t d3 = 178;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-            xRetain(volume);
-        });
-
-        volume = cache;
-
-    } else if (name == "tornado") {
-        static OSPVolume cache = ({
-            OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/interp8536.nc";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 280;
-            uint64_t d2 = 490;
-            uint64_t d3 = 490;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-            xRetain(volume);
-        });
-
-        volume = cache;
-
-    } else if (name == "turbine") {
-        static OSPVolume cache = ({
-            OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/turbine_VMIN_EPS1.7_minPts40_X1589_Y698_Z1799_Full.raw";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 1589;
-            uint64_t d2 = 698;
-            uint64_t d3 = 1799;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-            xRetain(volume);
-        });
-
-        volume = cache;
-
-    } else if (name == "turbulence") {
-        static OSPVolume cache = ({
-            OSPVolume volume;
-            const char *filename = "/mnt/seenas2/data/standalone/data/tacc-turbulence-256-volume.raw";
-            OSPDataType dataType = OSP_FLOAT;
-            uint64_t d1 = 256;
-            uint64_t d2 = 256;
-            uint64_t d3 = 256;
-            volume = xNewVolume(filename, dataType, d1, d2, d3);
-
-            xRetain(volume);
-        });
-
-        volume = cache;
-    
-    } else {
-        std::fprintf(stderr, "ERROR: Unknown volume: %s\n", name.c_str());
-        volume = nullptr;
-
     }
 
-    return volume;
+    return cache[key];
 }
 
 static OSPGeometry xNewIsosurface(
-    const std::string &volumeName
+    const std::string &volumeName,
+    int timestep
 ) {
     OSPGeometry isosurface;
     isosurface = ({
@@ -417,7 +380,7 @@ static OSPGeometry xNewIsosurface(
     OSPVolume volume;
     volume = ({
         OSPVolume volume;
-        volume = xGetVolume(volumeName);
+        volume = xGetVolume(volumeName, timestep);
 
         xCommit(volume);
     });
@@ -428,15 +391,16 @@ static OSPGeometry xNewIsosurface(
 
 static OSPGeometry xGetIsosurface(
     const std::string &volumeName,
+    int timestep,
     const std::vector<float> &isosurfaceValues
 ) {
-    using Key = std::tuple<std::string>;
+    using Key = std::tuple<std::string, int>;
     static std::map<Key, OSPGeometry> cache;
-    Key key{volumeName};
+    Key key{volumeName, timestep};
 
     if (cache.find(key) == cache.end()) {
         OSPGeometry isosurface;
-        isosurface = xNewIsosurface(volumeName);
+        isosurface = xNewIsosurface(volumeName, timestep);
 
         cache[key] = xRetain(isosurface);
     }
@@ -464,6 +428,7 @@ static OSPGeometry xGetIsosurface(
 
 static OSPGeometricModel xNewIsosurfaceModel(
     const std::string &volumeName,
+    int timestep,
     const std::vector<float> &isosurfaceValues
 ) {
     OSPGeometricModel model;
@@ -471,7 +436,7 @@ static OSPGeometricModel xNewIsosurfaceModel(
 
     OSPGeometry geometry = ({
         OSPGeometry isosurface;
-        isosurface = xGetIsosurface(volumeName, isosurfaceValues);
+        isosurface = xGetIsosurface(volumeName, timestep, isosurfaceValues);
 
         xCommit(isosurface);
     });
@@ -483,6 +448,7 @@ static OSPGeometricModel xNewIsosurfaceModel(
 
 static OSPVolumetricModel xNewVolumetricModel(
     const std::string &volumeName,
+    int timestep,
     const std::string &colorMapName,
     const std::string &opacityMapName
 ) {
@@ -492,7 +458,7 @@ static OSPVolumetricModel xNewVolumetricModel(
     OSPVolume volume;
     volume = ({
         OSPVolume volume;
-        volume = xGetVolume(volumeName);
+        volume = xGetVolume(volumeName, timestep);
         if (volume == nullptr) {
             return nullptr;
         }
@@ -500,7 +466,7 @@ static OSPVolumetricModel xNewVolumetricModel(
         xCommit(volume);
     });
     ospSetObject(model, "volume", volume);
-    ospRelease(volume);
+    // ospRelease(volume);
 
     OSPTransferFunction transferFunction;
     transferFunction = ({
@@ -510,27 +476,41 @@ static OSPVolumetricModel xNewVolumetricModel(
             return nullptr;
         }
 
-        float value[2] = { 0.0f, 0.130518f };
+        using Key = std::tuple<std::string, int>;
+        Key key{volumeName, timestep};
+
+        std::tuple<float, float> domain;
+        std::tie(std::ignore, std::ignore, domain) = volumes[key];
+
+        float lo, hi;
+        std::tie(lo, hi) = domain;
+
+        float value[2] = { lo, hi };
         ospSetParam(transferFunction, "value", OSP_BOX1F, value);
 
         xCommit(transferFunction);
     });
     ospSetObject(model, "transferFunction", transferFunction);
-    ospRelease(transferFunction);
+    // ospRelease(transferFunction);
 
     return model;
 }
 
 static void xErrorCallback(void *userData, OSPError error, const char *errorDetails) {
+    (void)userData;
+
     std::fprintf(stderr, "OSPError (%d): %s\n", (int)error, errorDetails);
 }
 
 static void xStatusCallback(void *userData, const char *messageText) {
+    (void)userData;
+
     std::fprintf(stderr, "OSPStatus: %s\n", messageText);
 }
 
 static OSPWorld xNewWorld(
     const std::string &volumeName,
+    int timestep,
     const std::string &colorMapName,
     const std::string &opacityMapName,
     const std::vector<float> &isosurfaceValues
@@ -549,10 +529,12 @@ static OSPWorld xNewWorld(
             group = ospNewGroup();
 
             if (isosurfaceValues.empty()) {
+                std::fprintf(stderr, "Making volumetric model\n");
+
                 OSPVolumetricModel volume;
                 volume = ({
                     OSPVolumetricModel model;
-                    model = xNewVolumetricModel(volumeName, colorMapName, opacityMapName);
+                    model = xNewVolumetricModel(volumeName, timestep, colorMapName, opacityMapName);
                     if (model == nullptr) {
                         return nullptr;
                     }
@@ -560,13 +542,15 @@ static OSPWorld xNewWorld(
                     xCommit(model);
                 });
                 ospSetObjectAsData(group, "volume", OSP_VOLUMETRIC_MODEL, volume);
-                ospRelease(volume);
+                // ospRelease(volume);
             
             } else {
+                std::fprintf(stderr, "Making geometric model\n");
+
                 OSPGeometricModel geometry;
                 geometry = ({
                     OSPGeometricModel model;
-                    model = xNewIsosurfaceModel(volumeName, isosurfaceValues);
+                    model = xNewIsosurfaceModel(volumeName, timestep, isosurfaceValues);
 
                     OSPMaterial material;
                     material = ({
@@ -582,36 +566,37 @@ static OSPWorld xNewWorld(
                     xCommit(model);
                 });
                 ospSetObjectAsData(group, "geometry", OSP_GEOMETRIC_MODEL, geometry);
-                ospRelease(geometry);
+                // ospRelease(geometry);
 
             }
 
             xCommit(group);
         });
         ospSetObject(instance, "group", group);
-        ospRelease(group);
+        // ospRelease(group);
 
         xCommit(instance);
     });
     ospSetObjectAsData(world, "instance", OSP_INSTANCE, instance);
-    ospRelease(instance);
+    // ospRelease(instance);
 
     return world;
 }
 
 static OSPWorld xGetWorld(
     const std::string &volumeName,
+    int timestep,
     const std::string &colorMapName,
     const std::string &opacityMapName,
     const std::vector<float> &isosurfaceValues
 ) {
-    using Key = std::tuple<std::string, std::string, std::string, bool>;
+    using Key = std::tuple<std::string, int, std::string, std::string, bool>;
     static std::map<Key, OSPWorld> cache;
 
-    Key key{volumeName, colorMapName, opacityMapName, isosurfaceValues.empty()};
+    Key key{volumeName, timestep, colorMapName, opacityMapName, isosurfaceValues.empty()};
     if (cache.find(key) == cache.end()) {
         OSPWorld world;
-        world = xNewWorld(volumeName, colorMapName, opacityMapName, isosurfaceValues);
+        world = xNewWorld(volumeName, timestep, colorMapName, opacityMapName, isosurfaceValues);
         if (world == nullptr) {
             return nullptr;
         }
@@ -625,8 +610,8 @@ static OSPWorld xGetWorld(
 
 static OSPFrameBuffer xNewFrameBuffer(int width, int height) {
     OSPFrameBuffer frameBuffer;
-    OSPFrameBufferFormat format = OSP_FB_RGBA8;
-    uint32_t channels = OSP_FB_COLOR;
+    OSPFrameBufferFormat format = OSP_FB_SRGBA;
+    uint32_t channels = OSP_FB_COLOR | OSP_FB_ACCUM;
     frameBuffer = ospNewFrameBuffer(width, height, format, channels);
 
     return frameBuffer;
@@ -635,13 +620,13 @@ static OSPFrameBuffer xNewFrameBuffer(int width, int height) {
 static OSPFrameBuffer xGetFrameBuffer(int width, int height) {
     using Key = std::tuple<int, int>;
     static std::map<Key, OSPFrameBuffer> cache;
-    Key key = std::make_tuple(width, height);
+    Key key{width, height};
 
     if (cache.find(key) == cache.end()) {
         OSPFrameBuffer frameBuffer;
         frameBuffer = xNewFrameBuffer(width, height);
-        ospRetain(frameBuffer);
-        cache[key] = frameBuffer;
+
+        cache[key] = xRetain(frameBuffer);
     }
 
     return cache[key];
@@ -686,12 +671,17 @@ static OSPCamera xGetCamera(
     ospSetParam(camera, "imageEnd", OSP_VEC2F, imageEnd);
 
     return camera;
-
 }
 
 static OSPRenderer xNewRenderer(const std::string &type) {
     OSPRenderer renderer;
     renderer = ospNewRenderer(type.c_str());
+
+    int pixelSamples[] = { 8 };
+    ospSetParam(renderer, "pixelSamples", OSP_INT, pixelSamples);
+
+    int maxPathLength[] = { 60 };
+    ospSetParam(renderer, "maxPathLength", OSP_INT, maxPathLength);
 
     return renderer;
 }
@@ -703,13 +693,12 @@ static OSPRenderer xGetRenderer(
     using Key = std::tuple<std::string>;
     static std::map<Key, OSPRenderer> cache;
 
-    Key key = std::make_tuple(type);
+    Key key{type};
     if (cache.find(key) == cache.end()) {
         OSPRenderer renderer;
         renderer = xNewRenderer(type);
 
-        ospRetain(renderer);
-        cache[key] = renderer;
+        cache[key] = xRetain(renderer);
     }
 
     OSPRenderer renderer;
@@ -749,6 +738,8 @@ int main(int argc, const char **argv) {
         device;
     });
 
+    (void)device;
+
     OSPFrameBuffer frameBuffer;
     OSPWorld world;
     OSPRenderer renderer;
@@ -762,6 +753,7 @@ int main(int argc, const char **argv) {
         world = ({
             OSPWorld world;
             auto volumeName = xRead<std::string>();
+            auto timestep = xRead<int>();
             auto colorMapName = xRead<std::string>();
             auto opacityMapName = xRead<std::string>();
             std::vector<float> isosurfaceValues(xRead<size_t>());
@@ -769,8 +761,9 @@ int main(int argc, const char **argv) {
                 isosurfaceValues[i] = xRead<float>();
                 std::fprintf(stderr, "isosurfaceValues[%zu] = %f\n", i, isosurfaceValues[i]);
             }
-            world = xGetWorld(volumeName, colorMapName, opacityMapName, isosurfaceValues);
+            world = xGetWorld(volumeName, timestep, colorMapName, opacityMapName, isosurfaceValues);
             if (world == nullptr) {
+                std::fprintf(stderr, "world is null\n");
                 continue;
             }
 
@@ -783,29 +776,24 @@ int main(int argc, const char **argv) {
         camera = ({
             OSPCamera camera;
             const char *type = "perspective";
-            float position[3] = {
-                xRead<float>(),
-                xRead<float>(),
-                xRead<float>(),
-            };
-            float up[3] = {
-                xRead<float>(),
-                xRead<float>(),
-                xRead<float>(),
-            };
-            float direction[3] = {
-                xRead<float>(),
-                xRead<float>(),
-                xRead<float>(),
-            };
-            float imageStart[2] = {
-                xRead<float>(),  // left
-                xRead<float>(),  // bottom
-            };
-            float imageEnd[2] = {
-                xRead<float>(),  // right
-                xRead<float>(),  // top
-            };
+            float position[3];
+            position[0] = xRead<float>();
+            position[1] = xRead<float>();
+            position[2] = xRead<float>();
+            float up[3];
+            up[0] = xRead<float>();
+            up[1] = xRead<float>();
+            up[2] = xRead<float>();
+            float direction[3];
+            direction[0] = xRead<float>();
+            direction[1] = xRead<float>();
+            direction[2] = xRead<float>();
+            float imageStart[2];
+            imageStart[0] = xRead<float>();  // left
+            imageStart[1] = xRead<float>();  // bottom
+            float imageEnd[2];
+            imageEnd[0] = xRead<float>();  // right
+            imageEnd[1] = xRead<float>();  // top
             camera = xGetCamera(type, position, up, direction, imageStart, imageEnd);
 
             xCommit(camera);
@@ -817,12 +805,11 @@ int main(int argc, const char **argv) {
         renderer = ({
             OSPRenderer renderer;
             const char *type = "ao";
-            float backgroundColor[4] = {
-                xRead<int>() / 255.0f,
-                xRead<int>() / 255.0f,
-                xRead<int>() / 255.0f,
-                xRead<int>() / 255.0f,
-            };
+            float backgroundColor[4];
+            backgroundColor[0] = xRead<int>() / 255.0f;
+            backgroundColor[1] = xRead<int>() / 255.0f;
+            backgroundColor[2] = xRead<int>() / 255.0f;
+            backgroundColor[3] = xRead<int>() / 255.0f;
             renderer = xGetRenderer(type, backgroundColor);
 
             xCommit(renderer);
@@ -830,20 +817,19 @@ int main(int argc, const char **argv) {
         continue;
 
     } else if (key == "render") {
-        int width;
-        int height;
-        std::tie(frameBuffer, width, height) = ({
+        auto width = xRead<int>();
+        auto height = xRead<int>();
+        frameBuffer = ({
             OSPFrameBuffer frameBuffer;
-            auto width = xRead<int>();
-            auto height = xRead<int>();
             frameBuffer = xGetFrameBuffer(width, height);
 
-            std::make_tuple(xCommit(frameBuffer), width, height);
+            xCommit(frameBuffer);
         });
 
         using Clock = std::chrono::steady_clock;
 
         Clock::time_point beforeRender = Clock::now();
+        ospResetAccumulation(frameBuffer);
         ospRenderFrameBlocking(frameBuffer, renderer, camera, world);
         Clock::time_point afterRender = Clock::now();
 
@@ -852,14 +838,24 @@ int main(int argc, const char **argv) {
         size_t imageLength;
         void *imageData;
         std::tie(imageLength, imageData) = ({
-            const void *rgba;
+            const void *rgbaOriginal;
             OSPFrameBufferChannel channel = OSP_FB_COLOR;
-            rgba = ospMapFrameBuffer(frameBuffer, channel);
+            rgbaOriginal = ospMapFrameBuffer(frameBuffer, channel);
+
+            std::vector<uint8_t> rgba(static_cast<const uint8_t *>(rgbaOriginal), static_cast<const uint8_t *>(rgbaOriginal) + 4 * width * height);
+            // for (int i=0, n=width*height; i<n; ++i) {
+            //     float ratio = rgba[4*i+3] / 255.0f;
+            //     for (int j=0; j<4; ++j) {
+            //         float f = rgba[4*i+j] * ratio + 0.0 * (1.0f - ratio);
+            //         uint8_t u = f >= 255.0f ? 255 : f <= 0.0 ? 0 : static_cast<uint8_t>(f);
+            //         rgba[4*i+j] = u;
+            //     }
+            // }
 
             size_t length;
-            static size_t size = 0;
-            static void *data = nullptr;
-            length = xToJPG(rgba, width, height, &size, &data);
+            static size_t size = 4UL * 1024UL * 1024UL;
+            static void *data = std::malloc(size);
+            length = xToPNG(rgba.data(), width, height, &size, &data);
 
             // const char *filename = "out.jpg";
             // xWriteBytes(filename, length, data);
@@ -867,7 +863,7 @@ int main(int argc, const char **argv) {
 
             // stbi_write_png("out.png", 256, 256, 4, rgba, 0);
 
-            ospUnmapFrameBuffer(rgba, frameBuffer);
+            ospUnmapFrameBuffer(rgbaOriginal, frameBuffer);
 
             std::make_tuple(length, data);
         });

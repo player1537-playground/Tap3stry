@@ -34,6 +34,9 @@ go-engine() {
 }
 
 go-server() {
+    # OSPRAY_LOG_LEVEL=debug \
+    # OSPRAY_LOG_OUTPUT=cerr \
+    # OSPRAY_ERROR_OUTPUT=cerr \
     pexec python3 "${cmake_source_dir:?}/src/server/main.py" \
         --engine-executable "${cmake_binary_dir:?}/engine" \
         ##
@@ -214,6 +217,7 @@ cmake_binary_dir=${cmake_source_dir:?}/build
 cmake_prefix_dir=${cmake_binary_dir:?}/stage
 cmake_configure=(
     -DCMAKE_BUILD_TYPE:STRING=Debug
+    -DCMAKE_CXX_FLAGS:STRING="-Wall -Werror -Wextra"
 )
 cmake_build=(
 )
