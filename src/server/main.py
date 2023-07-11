@@ -250,12 +250,12 @@ def image(options: str):
     lockDuration = int((afterLock - beforeLock) * 1e6)
     sendDuration = int((afterSend - beforeSend) * 1e6)
 
-    print(' '.join([
-        f'Render: {response.renderDuration:>6d}',
-        f'Encode: {response.encodeDuration:>6d}',
-        f'Lock: {lockDuration:>6d}',
-        f'Send: {sendDuration:>6d}',
-    ]))
+    # print(' '.join([
+    #     f'Render: {response.renderDuration:>6d}',
+    #     f'Encode: {response.encodeDuration:>6d}',
+    #     f'Lock: {lockDuration:>6d}',
+    #     f'Send: {sendDuration:>6d}',
+    # ]))
     return response.imageData, {
         'Content-Type': 'image/png',
         'Content-Length': response.imageLength,
@@ -304,15 +304,15 @@ def main(engineExecutable: Path, bind: str, port: int, debug: bool, logEngineInp
     )
 
     for name, timestep in [
-        # ('supernova', 0),
-        # ('magnetic', 0),
-        # ('teapot', 0),
-        # ('tornado', 0),
-        # ('turbine', 0),
-        # ('turbulence', 0),
-    # ] + [
-    #     ('jet', timestep)
-    #     for timestep in range(19)
+        ('supernova', 0),
+        ('magnetic', 0),
+        ('teapot', 0),
+        ('tornado', 0),
+        ('turbine', 0),
+        ('turbulence', 0),
+    ] + [
+        ('jet', timestep)
+        for timestep in range(19)
     ]:
         print(f'Loading {name} ({timestep})...', file=sys.stderr, flush=True, end='')
         start = time.time()

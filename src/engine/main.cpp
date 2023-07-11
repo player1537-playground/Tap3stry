@@ -205,12 +205,6 @@ static OSPVolume xNewVolume(const std::string &name, int timestep) {
     data = ({
         OSPData data;
         const void *sharedData = xReadBytes(filename);
-        std::fprintf(stderr, "volume: %f %f %f %f\n"
-        , static_cast<const float *>(sharedData)[0]
-        , static_cast<const float *>(sharedData)[1]
-        , static_cast<const float *>(sharedData)[2]
-        , static_cast<const float *>(sharedData)[3]);
-
         OSPDataType dataType = OSP_FLOAT;
         uint64_t numItems1 = d1;
         uint64_t numItems2 = d2;
@@ -529,8 +523,6 @@ static OSPWorld xNewWorld(
             group = ospNewGroup();
 
             if (isosurfaceValues.empty()) {
-                std::fprintf(stderr, "Making volumetric model\n");
-
                 OSPVolumetricModel volume;
                 volume = ({
                     OSPVolumetricModel model;
@@ -545,8 +537,6 @@ static OSPWorld xNewWorld(
                 // ospRelease(volume);
             
             } else {
-                std::fprintf(stderr, "Making geometric model\n");
-
                 OSPGeometricModel geometry;
                 geometry = ({
                     OSPGeometricModel model;
@@ -677,11 +667,11 @@ static OSPRenderer xNewRenderer(const std::string &type) {
     OSPRenderer renderer;
     renderer = ospNewRenderer(type.c_str());
 
-    int pixelSamples[] = { 8 };
+    int pixelSamples[] = { 2 };
     ospSetParam(renderer, "pixelSamples", OSP_INT, pixelSamples);
 
-    int maxPathLength[] = { 60 };
-    ospSetParam(renderer, "maxPathLength", OSP_INT, maxPathLength);
+    // int maxPathLength[] = { 60 };
+    // ospSetParam(renderer, "maxPathLength", OSP_INT, maxPathLength);
 
     return renderer;
 }
@@ -759,7 +749,6 @@ int main(int argc, const char **argv) {
             std::vector<float> isosurfaceValues(xRead<size_t>());
             for (size_t i=0, n=isosurfaceValues.size(); i<n; ++i) {
                 isosurfaceValues[i] = xRead<float>();
-                std::fprintf(stderr, "isosurfaceValues[%zu] = %f\n", i, isosurfaceValues[i]);
             }
             world = xGetWorld(volumeName, timestep, colorMapName, opacityMapName, isosurfaceValues);
             if (world == nullptr) {

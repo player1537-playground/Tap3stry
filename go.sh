@@ -33,11 +33,23 @@ go-engine() {
         ##
 }
 
+go-configure() {
+    pexec "${self:?}" docker \
+    exec "${self:?}" cmake configure
+}
+
+go-build() {
+    pexec "${self:?}" docker \
+    exec "${self:?}" cmake build
+}
+
 go-server() {
     # OSPRAY_LOG_LEVEL=debug \
     # OSPRAY_LOG_OUTPUT=cerr \
     # OSPRAY_ERROR_OUTPUT=cerr \
-    pexec python3 "${cmake_source_dir:?}/src/server/main.py" \
+    pexec "${self:?}" docker \
+    exec "${self:?}" virtualenv \
+    exec python3 "${cmake_source_dir:?}/src/server/main.py" \
         --engine-executable "${cmake_binary_dir:?}/engine" \
         ##
 }
@@ -79,7 +91,7 @@ docker_start=(
 docker_exec=(
 )
 docker_service_name=${project,,}
-docker_service_create=(
+docker_service_start=(
     --publish="8080:8080"
 )
 
@@ -150,11 +162,11 @@ go-docker-service() {
     "${FUNCNAME[0]:?}-$@"
 }
 
-go-docker-service-create() {
+go-docker-service-start() {
     pexec docker service create \
         --name="${docker_service_name:?}" \
         ${1:+--replicas="${1:?}"} \
-        "${docker_service_create[@]}" \
+        "${docker_service_start[@]}" \
         "${docker_tag:?}" \
         ##
 }

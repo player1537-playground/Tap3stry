@@ -5,7 +5,7 @@ docker_start+=(
     --net=host
 )
 
-docker_service_create+=(
+docker_service_start+=(
     --mount="type=bind,src=/mnt/seenas2/data,dst=/mnt/seenas2/data,readonly=true"
 )
 
